@@ -1,0 +1,26 @@
+# Local development only. Zerops runs Neo4j through its own Docker service,
+# defined in zerops.yaml — this file is purely so you can work offline.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   cd api && pip install -r requirements.txt && uvicorn main:app --reload --port 8000
+#   cd web && npm install && npm run dev
+
+services:
+  neo4j:
+    image: neo4j:5.26.0
+    container_name: sheetgraph-neo4j
+    ports:
+      - '7474:7474'   # Browser
+      - '7687:7687'   # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/devpassword
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+    volumes:
+      - ./neo4j-data:/data
+      - ./neo4j-logs:/logs
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:7474']
+      interval: 10s
+      timeout: 5s
+      retries: 12

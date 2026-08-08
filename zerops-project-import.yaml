@@ -1,0 +1,72 @@
+# yaml-language-server: $schema=https://api.app-prg1.zerops.io/api/rest/public/settings/import-project-yml-json-schema.json
+#yamlPreprocessor=on
+#
+# Provisions the whole SheetGraph project in one command:
+#   zcli project project-import zerops-project-import.yaml
+#
+# The preprocessor line above is required for <@generateRandomString(...)>
+# to expand — without it the literal string is stored as the password.
+
+project:
+  name: sheetgraph
+  description: Turn any spreadsheet into a queryable Neo4j knowledge graph
+  corePackage: LIGHT
+  tags:
+    - hackathon
+    - zerops-challenge
+  envVariables:
+    # Shared by the graph and api services. Generated once, at import time.
+    NEO4J_PASSWORD: <@generateRandomString(<24>)>
+    # Set this AFTER the first deploy, to the api service's public subdomain
+    # (e.g. https://api-1a2b-8000.prg1.zerops.app), then redeploy `web`.
+    API_URL: ""
+
+services:
+  # ─── Neo4j in a Docker service (a VM) ───────────────────
+  # Created first so the api has something to connect to on boot.
+  - hostname: graph
+    type: docker@26.1.5
+    priority: 10
+    startWithoutCode: true
+    minContainers: 1
+    maxContainers: 1
+    # Docker services need fixed resources — a VM cannot be resized without
+    # a restart, so min and max are set equal to disable autoscaling.
+    verticalAutoscaling:
+      cpuMode: SHARED
+      minCpu: 1
+      maxCpu: 1
+      startCpuCoreCount: 1
+      minRam: 2
+      maxRam: 2
+      minDisk: 10
+      maxDisk: 10
+    # The Neo4j Browser on :7474 is useful for judging and debugging.
+    # Bolt on :7687 stays private — sibling services reach it at graph:7687.
+    enableSubdomainAccess: true
+
+  # ─── FastAPI backend ────────────────────────────────────
+  - hostname: api
+    type: python@3.12
+    priority: 5
+    enableSubdomainAccess: true
+    minContainers: 1
+    # In-memory staging of a parsed sheet between upload and apply means a
+    # single container. Moving that to object storage would lift this cap.
+    maxContainers: 1
+    verticalAutoscaling:
+      minRam: 0.5
+      maxRam: 2
+    envSecrets:
+      # Replace in the Zerops GUI (Service → Environment variables) or via
+      # `zcli`. Kept out of the repo deliberately.
+      GROQ_API_KEY: ""
+
+  # ─── React SPA ──────────────────────────────────────────
+  - hostname: web
+    type: static
+    priority: 1
+    enableSubdomainAccess: true
+    verticalAutoscaling:
+      minRam: 0.25
+      maxRam: 1

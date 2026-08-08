@@ -1,0 +1,31 @@
+# Secrets — never commit
+.env
+*.env
+!.env.example
+.mcp.json
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+vendor/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Neo4j local dev data
+neo4j-data/
+neo4j-logs/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log

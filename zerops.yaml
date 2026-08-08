@@ -1,0 +1,121 @@
+# Build & run definition for every service in this repo.
+# Docs: https://docs.zerops.io/zerops-yaml/specification
+#
+# Three services make up SheetGraph:
+#   graph — Neo4j 5 running in a Zerops Docker service (a VM)
+#   api   — FastAPI on the Python runtime
+#   web   — the React SPA on the static (nginx) service
+#
+# `setup` must match the service hostname in zerops-project-import.yaml.
+
+zerops:
+  # ───────────────────────────────────────────────────────────
+  # Neo4j — Docker service
+  #
+  # Zerops has no managed graph database, so Neo4j runs as a container
+  # inside a Docker service. Two things matter here:
+  #   1. --network=host is mandatory; ports are declared below, never with -p
+  #   2. the data volume lives OUTSIDE /var/www, because a deploy replaces
+  #      the deployed artifact tree but leaves the rest of the VM disk alone
+  # ───────────────────────────────────────────────────────────
+  - setup: graph
+    run:
+      base: docker@26.1
+      prepareCommands:
+        # Pin the tag. prepareCommands output is cached, so :latest would
+        # silently never update.
+        - docker image pull neo4j:5.26.0
+      initCommands:
+        - sudo mkdir -p /var/lib/neo4j/data /var/lib/neo4j/logs
+        - sudo chown -R zerops:zerops /var/lib/neo4j
+      envVariables:
+        NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      # Env vars must be passed into the container explicitly — the VM's
+      # environment is not inherited by `docker run`.
+      start: >-
+        docker run --rm --network=host
+        -v /var/lib/neo4j/data:/data
+        -v /var/lib/neo4j/logs:/logs
+        -e NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+        -e NEO4J_server_memory_heap_initial__size=512m
+        -e NEO4J_server_memory_heap_max__size=1G
+        -e NEO4J_server_memory_pagecache_size=512m
+        neo4j:5.26.0
+      ports:
+        - port: 7474
+          httpSupport: true      # Neo4j Browser
+        - port: 7687
+          httpSupport: false     # Bolt — binary TCP, reached privately as graph:7687
+      healthCheck:
+        httpGet:
+          port: 7474
+          path: /
+        # A Docker service is a full VM: kernel boot plus Neo4j start-up is
+        # slow, so this is deliberately patient. A tight timeout here makes
+        # the service flap on every restart.
+        failureTimeout: 240
+        execPeriod: 15
+
+  # ───────────────────────────────────────────────────────────
+  # FastAPI backend — Python runtime
+  # ───────────────────────────────────────────────────────────
+  - setup: api
+    build:
+      base: python@3.12
+      buildCommands:
+        # Vendor dependencies into the artifact so the runtime container
+        # needs no network access and no system-Python pollution.
+        - pip install --target=./vendor -r api/requirements.txt
+      deployFiles:
+        - api/~        # '~' strips the api/ prefix → /var/www/main.py
+        - ./vendor     # → /var/www/vendor
+      cache:
+        - vendor
+    deploy:
+      readinessCheck:
+        httpGet:
+          port: 8000
+          path: /api/health
+        failureTimeout: 60
+        retryPeriod: 5
+    run:
+      base: python@3.12
+      ports:
+        - port: 8000
+          httpSupport: true
+      envVariables:
+        PYTHONPATH: /var/www/vendor
+        # Private network: services address each other by hostname, plain
+        # http/bolt, no TLS. https:// between services would fail.
+        NEO4J_URI: bolt://graph:7687
+        NEO4J_USER: neo4j
+        NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+        GROQ_API_KEY: ${GROQ_API_KEY}
+      healthCheck:
+        httpGet:
+          port: 8000
+          path: /api/health
+        failureTimeout: 90
+        execPeriod: 15
+      start: /var/www/vendor/bin/uvicorn main:app --host 0.0.0.0 --port 8000
+
+  # ───────────────────────────────────────────────────────────
+  # React SPA — static (nginx) service
+  #
+  # VITE_API_URL is baked in at build time. Set API_URL as a project-level
+  # environment variable to the api service's public subdomain, then
+  # redeploy web. See README for the exact steps.
+  # ───────────────────────────────────────────────────────────
+  - setup: web
+    build:
+      base: nodejs@22
+      envVariables:
+        VITE_API_URL: ${API_URL}
+      buildCommands:
+        - cd web && npm install && npm run build
+      deployFiles:
+        - web/dist/~   # contents of dist/ become the nginx document root
+      cache:
+        - web/node_modules
+    run:
+      base: static     # SPA fallback to /index.html is automatic
