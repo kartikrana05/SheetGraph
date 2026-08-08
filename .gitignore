@@ -1,6 +1,9 @@
-# Secrets — never commit
+# Secrets — never commit.
+# Note the .env.* line: `*.env` alone matches only files ENDING in .env, so a
+# file like `.env.local` or `.env.production` would sail straight past it.
 .env
 *.env
+.env.*
 !.env.example
 .mcp.json
 

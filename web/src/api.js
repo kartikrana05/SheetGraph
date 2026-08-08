@@ -37,10 +37,10 @@ function postJson(path, body) {
 export const api = {
   health: () => request('/api/health'),
 
-  upload(file, sheet) {
+  upload(files) {
     const form = new FormData()
-    form.append('file', file)
-    if (sheet) form.append('sheet', sheet)
+    // Same field name repeated — FastAPI collects these into list[UploadFile]
+    for (const file of files) form.append('files', file)
     return request('/api/upload', { method: 'POST', body: form })
   },
 
@@ -57,6 +57,15 @@ export const api = {
   suggestions: (id) => request(`/api/datasets/${id}/suggestions`),
 
   expand: (nodeId) => postJson('/api/expand', { nodeId }),
+
+  draftEndpoint: (datasetId, prompt) =>
+    postJson('/api/endpoints/draft', { datasetId, prompt }),
+  saveEndpoint: (datasetId, endpoint) =>
+    postJson('/api/endpoints', { datasetId, ...endpoint }),
+  listEndpoints: (datasetId) => request(`/api/datasets/${datasetId}/endpoints`),
+  deleteEndpoint: (slug) => request(`/api/endpoints/${slug}`, { method: 'DELETE' }),
+  runEndpoint: (slug, query) =>
+    request(`/api/data/${slug}${query ? `?${query}` : ''}`),
   chat: (datasetId, message, history) =>
     postJson('/api/chat', { datasetId, message, history }),
 }

@@ -27,14 +27,37 @@ MAX_ROWS_TO_MODEL = 12
 MAX_ROWS_TO_CLIENT = 100
 
 
+def node_properties(node: dict) -> list[str]:
+    """Every property name on a node, across all the sheets that feed it."""
+    names: list[str] = [node["key"]]
+    for source in node.get("sources", []):
+        for prop in source.get("properties", []):
+            if prop["name"] not in names:
+                names.append(prop["name"])
+    return names
+
+
 def build_schema_prompt(schema: dict) -> str:
-    lines = ["NODE LABELS:"]
-    for node in schema["nodes"]:
-        props = ", ".join(p["name"] for p in node["properties"])
+    sheets = schema.get("sheets") or []
+    lines = []
+
+    if len(sheets) > 1:
         lines.append(
-            f"- (:{node['label']}) key={node['key']}"
-            + (f" | properties: {props}" if props else "")
+            f"This dataset was built from {len(sheets)} tables: "
+            + ", ".join(f'"{s}"' for s in sheets)
         )
+        lines.append("")
+
+    lines.append("NODE LABELS:")
+    for node in schema["nodes"]:
+        props = ", ".join(node_properties(node))
+        origins = [s["sheet"] for s in node.get("sources", [])]
+        line = f"- (:{node['label']}) key={node['key']} | properties: {props}"
+        # Telling the model which entities span several tables is what makes it
+        # write cross-sheet queries instead of treating each table separately.
+        if len(origins) > 1:
+            line += f"  <- joined across {len(origins)} tables: {', '.join(origins)}"
+        lines.append(line)
 
     lines.append("")
     lines.append("RELATIONSHIPS:")
@@ -42,7 +65,16 @@ def build_schema_prompt(schema: dict) -> str:
         for rel in schema["relationships"]:
             lines.append(f"- (:{rel['from']})-[:{rel['type']}]->(:{rel['to']})")
     else:
-        lines.append("- (none — this dataset has isolated nodes only)")
+        lines.append("- (none - this dataset has isolated nodes only)")
+
+    joined = [n["label"] for n in schema["nodes"] if len(n.get("sources", [])) > 1]
+    if joined:
+        lines.append("")
+        lines.append(
+            "NOTE: " + ", ".join(joined) + " exist in more than one source table, so a "
+            "single query can traverse from data that started in one table to data that "
+            "started in another. Prefer such queries when the question spans both."
+        )
 
     return "\n".join(lines)
 
@@ -105,7 +137,7 @@ def validate_cypher(cypher: str) -> tuple[bool, str]:
 
 
 def run_cypher(cypher: str, dataset_id: str) -> list[dict]:
-    with graphdb.driver().session() as session:
+    with graphdb.open_session() as session:
         return session.run(cypher, ds=dataset_id).data()
 
 
@@ -218,6 +250,8 @@ def suggest_questions(schema: dict, dataset_name: str) -> list[str]:
             "Write 6 short, specific questions a manager would actually ask of this data. "
             "Vary them: at least one counting question, one ranking question, one that "
             "traverses a relationship, and one looking for gaps or anomalies. "
+            "If any entity is joined across several tables, make at least two questions "
+            "span those tables — that is the most interesting thing this graph can do. "
             "No question may exceed 12 words.",
             temperature=0.5,
             max_tokens=512,

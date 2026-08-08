@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, misconfigured } from './api'
 import UploadStep from './UploadStep'
+import DatasetLibrary from './DatasetLibrary'
 import SchemaStep from './SchemaStep'
 import ExploreView from './ExploreView'
 
@@ -11,6 +12,20 @@ export default function App() {
   const [pending, setPending] = useState(null)   // { uploadId, profile, schema, warnings }
   const [dataset, setDataset] = useState(null)   // { datasetId, name, counts, schema }
   const [health, setHealth] = useState(null)
+  const [opening, setOpening] = useState(null)
+
+  async function openDataset(id) {
+    setOpening(id)
+    try {
+      const saved = await api.dataset(id)
+      setDataset(saved)
+      setStep(2)
+    } catch (err) {
+      setOpening(null)
+      // Surfaced in place of the library rather than as a silent no-op.
+      window.alert(`Could not open that dataset: ${err.message}`)
+    }
+  }
 
   useEffect(() => {
     if (misconfigured) return
@@ -90,15 +105,24 @@ export default function App() {
             )}
 
             {step === 0 && (
-              <UploadStep
-                onProfiled={(result) => { setPending(result); setStep(1) }}
-              />
+              <>
+                <UploadStep
+                  onProfiled={(result) => { setPending(result); setStep(1) }}
+                />
+                {opening ? (
+                  <div className="thinking" style={{ marginTop: 40 }}>
+                    <span className="spinner" /> Opening…
+                  </div>
+                ) : (
+                  <DatasetLibrary onOpen={openDataset} />
+                )}
+              </>
             )}
 
             {step === 1 && pending && (
               <SchemaStep
                 uploadId={pending.uploadId}
-                profile={pending.profile}
+                profiles={pending.profiles}
                 schema={pending.schema}
                 warnings={pending.warnings}
                 onSchema={(schema, warnings) => setPending({ ...pending, schema, warnings })}

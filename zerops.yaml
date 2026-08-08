@@ -85,11 +85,18 @@ zerops:
           httpSupport: true
       envVariables:
         PYTHONPATH: /var/www/vendor
-        # Private network: services address each other by hostname, plain
-        # http/bolt, no TLS. https:// between services would fail.
-        NEO4J_URI: bolt://graph:7687
-        NEO4J_USER: neo4j
+        # All four come from project-level variables, so pointing the API at a
+        # different Neo4j (the in-project Docker service, or a managed Aura
+        # instance as a fallback) is a config change plus a redeploy — no code
+        # edit. Defaults are set in zerops-project-import.yaml.
+        #
+        # In-project:  bolt://graph:7687   (private network, no TLS — https://
+        #                                   between services would fail)
+        # Aura:        neo4j+s://<id>.databases.neo4j.io
+        NEO4J_URI: ${NEO4J_URI}
+        NEO4J_USER: ${NEO4J_USER}
         NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+        NEO4J_DATABASE: ${NEO4J_DATABASE}
         GROQ_API_KEY: ${GROQ_API_KEY}
       healthCheck:
         httpGet:

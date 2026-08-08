@@ -35,7 +35,7 @@ function displayName(node) {
   return text.length > 24 ? `${text.slice(0, 23)}…` : text
 }
 
-export default function GraphCanvas({ data, labels, highlight, onSelect }) {
+export default function GraphCanvas({ data, labels, keyByLabel = {}, highlight, onSelect }) {
   const containerRef = useRef(null)
   const cyRef = useRef(null)
 
@@ -210,9 +210,16 @@ export default function GraphCanvas({ data, labels, highlight, onSelect }) {
     const wanted = new Set(highlight)
     const matched = cy.nodes().filter((node) => {
       const props = node.data('props') || {}
-      return Object.entries(props).some(
-        ([k, v]) => k !== '_ds' && typeof v === 'string' && wanted.has(v.trim())
-      )
+      // Match on identity only — the node's key, or the label shown on screen.
+      // Matching any property lights up every node that merely shares an
+      // attribute with the answer: ask about two distributors and every node
+      // in the same city joins in, which reads as the answer being wrong.
+      const keyProp = keyByLabel[node.data('label')]
+      const identity = [
+        keyProp ? props[keyProp] : null,
+        node.data('name'),
+      ]
+      return identity.some((v) => typeof v === 'string' && wanted.has(v.trim()))
     })
     if (!matched.length) return
 

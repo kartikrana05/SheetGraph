@@ -15,8 +15,20 @@ project:
     - hackathon
     - zerops-challenge
   envVariables:
-    # Shared by the graph and api services. Generated once, at import time.
+    # ── Database connection ──────────────────────────────────
+    # Defaults point at the in-project `graph` Docker service. To fall back to
+    # a managed Neo4j Aura instance, change these four here and redeploy `api`
+    # — no code change, because the app reads all of them from the environment.
+    #
+    #   NEO4J_URI:      neo4j+s://<instance>.databases.neo4j.io
+    #   NEO4J_USER:     <instance id>      (Aura's snippet calls it USERNAME)
+    #   NEO4J_PASSWORD: <generated>
+    #   NEO4J_DATABASE: <instance id>      (leave empty for self-hosted)
+    NEO4J_URI: bolt://graph:7687
+    NEO4J_USER: neo4j
     NEO4J_PASSWORD: <@generateRandomString(<24>)>
+    NEO4J_DATABASE: ""
+
     # Set this AFTER the first deploy, to the api service's public subdomain
     # (e.g. https://api-1a2b-8000.prg1.zerops.app), then redeploy `web`.
     API_URL: ""
@@ -27,7 +39,10 @@ services:
   - hostname: graph
     type: docker@26.1.5
     priority: 10
-    startWithoutCode: true
+    # buildFromGit does a one-time build straight from a PUBLIC repo, so
+    # importing this file provisions AND deploys in a single step — no zcli
+    # push needed. The URL must have no trailing .git suffix.
+    buildFromGit: https://github.com/kartikrana05/SheetGraph
     minContainers: 1
     maxContainers: 1
     # Docker services need fixed resources — a VM cannot be resized without
@@ -49,6 +64,7 @@ services:
   - hostname: api
     type: python@3.12
     priority: 5
+    buildFromGit: https://github.com/kartikrana05/SheetGraph
     enableSubdomainAccess: true
     minContainers: 1
     # In-memory staging of a parsed sheet between upload and apply means a
@@ -66,6 +82,7 @@ services:
   - hostname: web
     type: static
     priority: 1
+    buildFromGit: https://github.com/kartikrana05/SheetGraph
     enableSubdomainAccess: true
     verticalAutoscaling:
       minRam: 0.25

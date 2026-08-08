@@ -12,20 +12,34 @@ Flow:
 from __future__ import annotations
 
 import os
+import re
 import time
+import traceback
 import uuid
 from collections import OrderedDict
+from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-import graphdb
-import profiler
-import query
-import schema_infer
+# Load api/.env for local development, before anything reads os.getenv.
+# override=False means a real environment variable always wins, so this is
+# inert on Zerops, where the platform injects the variables directly.
+load_dotenv(Path(__file__).parent / ".env", override=False)
 
-MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+import endpoints  # noqa: E402
+import graphdb  # noqa: E402  — imported after the environment is populated
+import profiler  # noqa: E402
+import query  # noqa: E402
+import schema_infer  # noqa: E402
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+MAX_FILES = 10
+# The prompt carries every sheet's column profile, so this bounds context size
+# as much as it bounds the upload.
+MAX_SHEETS = 8
 MAX_PENDING_UPLOADS = 20
 PENDING_TTL_SECONDS = 60 * 60
 
@@ -104,6 +118,19 @@ class ExpandRequest(BaseModel):
     limit: int = 40
 
 
+class DraftEndpointRequest(BaseModel):
+    datasetId: str
+    prompt: str
+
+
+class SaveEndpointRequest(BaseModel):
+    datasetId: str
+    name: str
+    description: str = ""
+    cypher: str
+    params: list[dict] = []
+
+
 # ─────────────────────────────────────────────
 # Health
 # ─────────────────────────────────────────────
@@ -114,7 +141,7 @@ def health():
     """Liveness for the Zerops health check. Never raises — a 200 with a
     degraded body is more useful than a 500 during the slow Docker VM boot."""
     try:
-        with graphdb.driver().session() as session:
+        with graphdb.open_session() as session:
             session.run("RETURN 1").consume()
         neo4j_state = "connected"
     except Exception as exc:
@@ -133,51 +160,93 @@ def health():
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), sheet: str | None = Form(default=None)):
-    raw = await file.read()
+async def upload(files: list[UploadFile] = File(...)):
+    """
+    Accept one or more spreadsheets.
 
-    if not raw:
-        raise HTTPException(status_code=400, detail="That file is empty.")
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File is {len(raw) // 1024 // 1024}MB. The limit is "
-                   f"{MAX_UPLOAD_BYTES // 1024 // 1024}MB.",
-        )
-
-    filename = file.filename or "upload.csv"
-    if not filename.lower().endswith((".csv", ".tsv", ".txt", ".xlsx", ".xlsm")):
+    Every tab of every workbook becomes its own table, because a multi-tab
+    workbook is the most common way related tables already travel together —
+    and those tabs are exactly what we want to join in the graph.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files received.")
+    if len(files) > MAX_FILES:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported file type. Upload a .csv, .tsv, .xlsx or .xlsm file.",
+            detail=f"Please upload at most {MAX_FILES} files at once.",
         )
 
-    try:
-        frame, sheet_names = profiler.read_sheet(raw, filename, sheet)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Could not read that file: {exc}")
+    profiles: list[dict] = []
+    sheets: dict[str, list[dict]] = {}
+    rejected: list[dict] = []
+    total_bytes = 0
 
-    # Clean first, then validate — a trailing empty column would otherwise
-    # let a single-column sheet through the shape check below.
-    frame = profiler.clean_frame(frame)
+    for upload_file in files:
+        filename = upload_file.filename or "upload.csv"
+        raw = await upload_file.read()
 
-    if frame.empty:
-        raise HTTPException(status_code=400, detail="That sheet has no rows.")
-    if len(frame.columns) < 2:
-        raise HTTPException(
-            status_code=400,
-            detail="A graph needs at least two columns to relate entities. "
-                   "This sheet has one.",
+        if not raw:
+            rejected.append({"file": filename, "reason": "the file is empty"})
+            continue
+
+        total_bytes += len(raw)
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Total upload exceeds {MAX_UPLOAD_BYTES // 1024 // 1024}MB.",
+            )
+
+        if not filename.lower().endswith((".csv", ".tsv", ".txt", ".xlsx", ".xlsm")):
+            rejected.append({"file": filename, "reason": "unsupported file type"})
+            continue
+
+        try:
+            tables = profiler.read_tables(raw, filename)
+        except Exception as exc:
+            rejected.append({"file": filename, "reason": f"could not be read ({exc})"})
+            continue
+
+        if not tables:
+            rejected.append({
+                "file": filename,
+                "reason": "no table with at least 2 columns and 1 row was found",
+            })
+            continue
+
+        for sheet_name, frame in tables:
+            # Sheet names are the identity the schema references, so they must
+            # be unique across the whole upload even if two files share a name.
+            unique = sheet_name
+            suffix = 2
+            while unique in sheets:
+                unique = f"{sheet_name} ({suffix})"
+                suffix += 1
+
+            profiles.append(
+                profiler.profile_dataframe(frame, filename, sheet_name=unique)
+            )
+            sheets[unique] = profiler.frame_to_records(frame)
+
+    if not profiles:
+        detail = "None of those files could be read."
+        if rejected:
+            detail += " " + "; ".join(f"{r['file']}: {r['reason']}" for r in rejected)
+        raise HTTPException(status_code=400, detail=detail)
+
+    if len(profiles) > MAX_SHEETS:
+        rejected.extend(
+            {"file": p["sheetName"], "reason": f"beyond the {MAX_SHEETS}-table limit"}
+            for p in profiles[MAX_SHEETS:]
         )
-
-    profile = profiler.profile_dataframe(frame, filename, sheet_names)
-    records = profiler.frame_to_records(frame)
+        for extra in profiles[MAX_SHEETS:]:
+            sheets.pop(extra["sheetName"], None)
+        profiles = profiles[:MAX_SHEETS]
 
     upload_id = uuid.uuid4().hex[:12]
-    _pending[upload_id] = {"profile": profile, "records": records, "at": time.time()}
+    _pending[upload_id] = {"profiles": profiles, "sheets": sheets, "at": time.time()}
     _evict_stale()
 
-    return {"uploadId": upload_id, "profile": profile}
+    return {"uploadId": upload_id, "profiles": profiles, "rejected": rejected}
 
 
 # ─────────────────────────────────────────────
@@ -189,7 +258,7 @@ async def upload(file: UploadFile = File(...), sheet: str | None = Form(default=
 def propose(req: ProposeRequest):
     entry = _get_pending(req.uploadId)
     try:
-        schema, warnings = schema_infer.propose_schema(entry["profile"], req.hint)
+        schema, warnings = schema_infer.propose_schema(entry["profiles"], req.hint)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Schema inference failed: {exc}")
     return {"schema": schema, "warnings": warnings}
@@ -200,7 +269,7 @@ def refine(req: RefineRequest):
     entry = _get_pending(req.uploadId)
     try:
         schema, warnings = schema_infer.refine_schema(
-            entry["profile"], req.schema_, req.instruction
+            entry["profiles"], req.schema_, req.instruction
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Could not apply that change: {exc}")
@@ -215,24 +284,27 @@ def refine(req: RefineRequest):
 @app.post("/api/schema/apply")
 def apply(req: ApplyRequest):
     entry = _get_pending(req.uploadId)
-    profile = entry["profile"]
+    profiles = entry["profiles"]
 
     # Re-validate before touching the database: the schema came back from the
     # browser and may have been edited there.
     try:
-        schema, warnings = schema_infer.validate_schema(req.schema_, profile)
+        schema, warnings = schema_infer.validate_schema(req.schema_, profiles)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
     dataset_id = uuid.uuid4().hex[:12]
 
     try:
-        counts = graphdb.ingest(schema, entry["records"], dataset_id)
+        counts = graphdb.ingest(schema, entry["sheets"], dataset_id)
         graphdb.save_dataset(
-            dataset_id, schema["datasetName"], schema, profile, counts
+            dataset_id, schema["datasetName"], schema, profiles, counts
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Ingest failed: {exc}")
+        # The traceback goes to the server log; the client gets the message,
+        # which now names the node or relationship that failed.
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"Ingest failed. {exc}")
 
     _pending.pop(req.uploadId, None)
 
@@ -241,7 +313,8 @@ def apply(req: ApplyRequest):
         "name": schema["datasetName"],
         "counts": counts,
         "schema": schema,
-        "warnings": warnings,
+        "warnings": warnings + counts.get("warnings", []),
+        "joins": schema_infer.join_report(schema),
     }
 
 
@@ -263,7 +336,21 @@ def dataset(dataset_id: str):
     found = graphdb.get_dataset(dataset_id)
     if not found:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    return found
+
+    # Same shape /api/schema/apply returns, so the explore view can open a
+    # previously seeded dataset without a separate code path.
+    return {
+        "datasetId": found["id"],
+        "name": found.get("name"),
+        "schema": found["schema"],
+        "sheets": found.get("sheets", []),
+        "counts": {
+            "nodes": found.get("nodeCount", 0),
+            "relationships": found.get("relCount", 0),
+            "joins": found.get("joins", []),
+        },
+        "createdAt": found.get("createdAt"),
+    }
 
 
 @app.delete("/api/datasets/{dataset_id}")
@@ -309,3 +396,109 @@ def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     return query.ask(req.datasetId, req.message.strip(), req.history)
+
+
+# ─────────────────────────────────────────────
+# Saved endpoints — a prompt becomes a REST API
+# ─────────────────────────────────────────────
+
+
+def _base_url(request: Request) -> str:
+    """
+    Public base for the curl example.
+
+    Behind Zerops the app sits behind a TLS-terminating balancer, so the scheme
+    the app sees is http while callers must use https. Trust the forwarded
+    header when present, otherwise the request's own scheme.
+    """
+    forwarded = request.headers.get("x-forwarded-proto")
+    base = str(request.base_url).rstrip("/")
+    if forwarded:
+        base = re.sub(r"^https?", forwarded.split(",")[0].strip(), base)
+    return base
+
+
+@app.post("/api/endpoints/draft")
+def draft_endpoint(req: DraftEndpointRequest, request: Request):
+    """Turn a description into a parameterised query, without saving it."""
+    if not req.prompt.strip():
+        raise HTTPException(status_code=400, detail="Describe what the endpoint should return.")
+    try:
+        drafted = endpoints.draft(req.datasetId, req.prompt.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"Could not draft that endpoint. {exc}")
+
+    # Run it once with defaults so the user sees real rows before committing.
+    preview, preview_error = [], None
+    try:
+        args = endpoints.resolve_args({**drafted, "datasetId": req.datasetId}, {})
+        with graphdb.open_session() as session:
+            preview = session.run(drafted["cypher"], **args).data()[:5]
+    except Exception as exc:
+        preview_error = str(exc)
+
+    return {**drafted, "preview": preview, "previewError": preview_error}
+
+
+@app.post("/api/endpoints")
+def create_endpoint(req: SaveEndpointRequest, request: Request):
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Give the endpoint a name.")
+    try:
+        saved = endpoints.save(
+            req.datasetId, req.name.strip(), req.description.strip(),
+            req.cypher.strip(), req.params,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"Could not save that endpoint. {exc}")
+
+    base = _base_url(request)
+    return {
+        **saved,
+        "url": f"{base}/api/data/{saved['slug']}",
+        "curl": endpoints.curl_for(saved, base),
+    }
+
+
+@app.get("/api/datasets/{dataset_id}/endpoints")
+def list_endpoints(dataset_id: str, request: Request):
+    base = _base_url(request)
+    items = endpoints.list_for_dataset(dataset_id)
+    for item in items:
+        item["url"] = f"{base}/api/data/{item['slug']}"
+        item["curl"] = endpoints.curl_for({**item, "datasetId": dataset_id}, base)
+    return {"endpoints": items}
+
+
+@app.delete("/api/endpoints/{slug}")
+def remove_endpoint(slug: str):
+    if not endpoints.delete(slug):
+        raise HTTPException(status_code=404, detail=f"No endpoint named '{slug}'")
+    return {"deleted": slug}
+
+
+@app.get("/api/data/{slug}")
+def run_endpoint(slug: str, request: Request):
+    """
+    The public data endpoint.
+
+    Every query-string value is bound as a Cypher parameter — none is ever
+    concatenated into the query — and the stored Cypher is re-validated as
+    read-only on each call.
+    """
+    supplied = dict(request.query_params)
+    try:
+        return endpoints.run(slug, supplied)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        traceback.print_exc()
+        raise HTTPException(status_code=502, detail=f"Query failed. {exc}")

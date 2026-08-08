@@ -1,12 +1,12 @@
 """
 Schema inference — the core idea of this project.
 
-Given a column profile of an arbitrary spreadsheet, propose a property-graph
-schema: which columns become node labels, which become properties hanging off
-those nodes, and which columns imply relationships between them.
+Given column profiles for one or more uploaded tables, propose a single
+property-graph schema: which columns become node labels, which stay as
+properties, how they relate, and — crucially — which entities appear in more
+than one sheet and should therefore become ONE node fed by several sources.
 
-The user can then refine the proposal in natural language ("split owner into
-its own Person node", "drop the budget columns") and we re-derive.
+That last part is what turns a pile of spreadsheets into a connected graph.
 """
 
 from __future__ import annotations
@@ -17,102 +17,126 @@ import re
 from llm import complete_json
 
 RESERVED_LABELS = {"_Dataset", "_Column"}
+MAX_SHEETS = 8
 
 SYSTEM_PROMPT = """\
-You are a data modelling expert who converts flat spreadsheets into property-graph schemas for Neo4j.
+You are a data modelling expert who converts spreadsheets into a single property-graph
+schema for Neo4j.
 
-You will be given a statistical profile of a spreadsheet: every column with its
-semantic type, distinct-value count, fill rate, uniqueness ratio and sample values.
+You will be given a statistical profile of one or more tables. Each table lists its
+columns with semantic type, distinct-value count, fill rate, uniqueness ratio and
+sample values.
 
-Your job is to propose a graph schema. Return ONLY a JSON object, no prose, no markdown.
+Return ONLY a JSON object, no prose, no markdown.
 
 OUTPUT FORMAT:
 {
-  "datasetName": "Short human name for this dataset",
-  "summary": "2-3 sentences on what this sheet appears to track and how you modelled it",
+  "datasetName": "Short human name for this whole dataset",
+  "summary": "3-4 sentences: what these tables track, how you modelled them, and which entities you joined across tables",
   "nodes": [
     {
-      "label": "Project",
-      "key": "projectId",
-      "keyColumn": "Project ID",
-      "properties": [
-        {"name": "projectName", "column": "Project Name"},
-        {"name": "status", "column": "Status"}
+      "label": "Product",
+      "key": "sku",
+      "sources": [
+        {
+          "sheet": "sales",
+          "keyColumn": "SKU",
+          "properties": [{"name": "unitPrice", "column": "Unit Price"}]
+        },
+        {
+          "sheet": "product_master",
+          "keyColumn": "Product Code",
+          "properties": [{"name": "brand", "column": "Brand"}]
+        }
       ],
-      "reason": "Why this is its own node"
+      "reason": "Why this is its own node, and why these columns are the same entity"
     }
   ],
   "relationships": [
     {
-      "type": "OWNED_BY",
-      "from": "Project",
-      "to": "Person",
-      "reason": "Each row links a project to its owner"
+      "type": "CONTAINS",
+      "from": "Invoice",
+      "to": "Product",
+      "sheet": "sales",
+      "reason": "Each row of the sales sheet links an invoice to a product"
     }
   ]
 }
 
 MODELLING RULES:
-1. Every row of the sheet describes one primary entity. That entity is always a node.
+1. Every row of a table describes one primary entity. That entity is always a node.
 2. A column with LOW distinct count relative to row count (a category — status, region,
-   owner, department, priority, sprint) is a strong candidate to become its OWN node,
-   because that is what makes the graph interesting to traverse. Prefer promoting these.
-3. A column with a HIGH uniqueness ratio on the primary entity (an ID, a title, a
-   free-text description) stays a PROPERTY of the primary node, not its own node.
-4. Numeric measures (budget, hours, count, amount, percentage) are ALWAYS properties,
-   never nodes.
-5. Dates are properties. Only promote a date to a node if the user explicitly asks.
-6. Every node MUST have a "key" — the property that uniquely identifies it. For a
-   promoted category node the key is usually the category value itself.
-   "keyColumn" must be the EXACT column name from the profile.
-7. Relationship types are UPPER_SNAKE_CASE verbs read from the primary entity outward
-   (OWNED_BY, ASSIGNED_TO, BELONGS_TO, IN_STATUS, TARGETS).
-8. Node labels are PascalCase and singular (Project, Person, Sprint, Region).
-9. Property names are lowerCamelCase.
-10. Aim for 3 to 7 node labels. Fewer than 3 makes a boring graph; more than 7 is noise.
-11. Every "column" value you emit MUST be an exact column name from the profile.
-    Never invent a column. Never reference a column twice as a property of the same node.
-12. Every node label in "relationships" MUST exist in "nodes".
+   owner, department, priority, channel) should become its OWN node. That is what makes
+   the graph worth traversing. Prefer promoting these.
+3. A column with a HIGH uniqueness ratio on the primary entity (an ID, or a free-text
+   field) stays a PROPERTY of the primary node, not its own node.
+4. FREE TEXT IS NEVER A NODE, even when its distinct count is low. If the sample values
+   are sentences, notes, comments, descriptions or subject lines, it is a property.
+   Judge by whether the values read like prose, not by the count.
+5. Numeric measures (amount, quantity, price, hours, score, percentage) are ALWAYS
+   properties. So are dates.
+6. Every node MUST have a "key" — the property uniquely identifying it — and every
+   source MUST give the exact "keyColumn" from that sheet's profile.
+
+CROSS-SHEET JOINING — the most important part:
+7. If the SAME real-world entity appears in two or more tables, emit ONE node with
+   several entries in "sources". Match on meaning and on overlapping sample values,
+   not on identical column names: "SKU" in one sheet and "Product Code" in another are
+   the same product if their values look alike.
+8. Look hard for these joins. Two tables that share a customer, product, employee,
+   region or order are the reason to model them together at all. A schema where no
+   node has more than one source is usually a missed opportunity — say so in the
+   summary if you genuinely could not find any.
+9. Do NOT join two columns just because their names match. If the sample values are
+   clearly different kinds of thing, keep them as separate nodes.
+
+NAMING AND VALIDITY:
+10. Node labels are PascalCase and singular. Property names are lowerCamelCase.
+    Relationship types are UPPER_SNAKE_CASE verbs.
+11. Every "sheet" value MUST be an exact sheet name from the profile. Every "column"
+    MUST be an exact column name from THAT sheet. Never invent either.
+12. A relationship's "sheet" must be a sheet where BOTH endpoint nodes have a source —
+    that is what makes the two ends joinable row by row.
+13. Aim for 4 to 9 node labels overall. Fewer is a boring graph; more is noise.
 """
 
 REFINE_PROMPT = """\
 You are refining an existing property-graph schema based on a user instruction.
 
-You will be given the column profile of the source spreadsheet, the current schema,
-and the user's instruction. Apply the instruction and return the COMPLETE updated
-schema in exactly the same JSON format. Do not return a diff.
+You will be given the column profiles of the source tables, the current schema, and the
+user's instruction. Apply it and return the COMPLETE updated schema in exactly the same
+JSON format. Do not return a diff.
 
-Preserve everything the user did not ask you to change. Obey all the original
-modelling rules: exact column names only, every node needs a key and keyColumn,
-labels PascalCase, relationship types UPPER_SNAKE_CASE, relationship endpoints must
-exist in nodes.
+Preserve everything the user did not ask you to change. Obey all the original modelling
+rules: exact sheet and column names only, every node needs a key and every source needs
+a keyColumn, labels PascalCase, relationship types UPPER_SNAKE_CASE, and a
+relationship's sheet must be one where both endpoints have a source.
 
-If the instruction is impossible (references a column that does not exist, or asks
-for something incoherent), return the schema unchanged and explain why in the
-"summary" field, prefixed with "Could not apply: ".
+If the instruction is impossible (references something that does not exist, or is
+incoherent), return the schema unchanged and explain why in "summary", prefixed with
+"Could not apply: ".
 
 Return ONLY the JSON object.
 """
 
 
-def _profile_for_prompt(profile: dict) -> str:
-    """Compact the profile so it fits the context window comfortably."""
+def _sheet_block(profile: dict) -> str:
     lines = [
-        f"File: {profile['filename']}",
-        f"Rows: {profile['rowCount']}, Columns: {profile['columnCount']}",
-        "",
-        "COLUMNS:",
+        f'TABLE "{profile["sheetName"]}"  ({profile["rowCount"]} rows, '
+        f'{profile["columnCount"]} columns)',
     ]
     for col in profile["columns"]:
-        samples = ", ".join(
-            json.dumps(v, default=str) for v in col["sampleValues"][:5]
-        )
+        samples = ", ".join(json.dumps(v, default=str) for v in col["sampleValues"][:5])
         lines.append(
-            f"- \"{col['name']}\" | type={col['semanticType']} "
-            f"| distinct={col['distinctCount']} | uniqueRatio={col['uniqueRatio']} "
-            f"| fillRate={col['fillRate']} | samples: {samples}"
+            f'  - "{col["name"]}" | type={col["semanticType"]} '
+            f'| distinct={col["distinctCount"]} | uniqueRatio={col["uniqueRatio"]} '
+            f'| fillRate={col["fillRate"]} | samples: {samples}'
         )
     return "\n".join(lines)
+
+
+def profiles_for_prompt(profiles: list[dict]) -> str:
+    return "\n\n".join(_sheet_block(p) for p in profiles[:MAX_SHEETS])
 
 
 def _pascal(value: str) -> str:
@@ -134,17 +158,35 @@ def _camel(value: str) -> str:
     return f"f_{name}" if name[0].isdigit() else name
 
 
-def validate_schema(schema: dict, profile: dict) -> tuple[dict, list[str]]:
+def _resolve_sheet(given: str, valid: dict[str, dict]) -> str | None:
     """
-    Repair an LLM-proposed schema against the real column list.
+    Map a sheet name from the model onto a real one.
 
-    The model is good at the modelling judgement and bad at exact string
-    fidelity, so we normalise casing, drop references to columns that do not
-    exist, and guarantee every node has a usable key. Returns the cleaned
-    schema plus a list of human-readable warnings to surface in the UI.
+    The model reliably gets the modelling judgement right and unreliably
+    reproduces long names verbatim, so an exact match is tried first and a
+    normalised match second.
+    """
+    if given in valid:
+        return given
+    if not given:
+        return None
+    squashed = re.sub(r"[^a-z0-9]", "", str(given).lower())
+    for name in valid:
+        if re.sub(r"[^a-z0-9]", "", name.lower()) == squashed:
+            return name
+    return None
+
+
+def validate_schema(schema: dict, profiles: list[dict]) -> tuple[dict, list[str]]:
+    """
+    Repair an LLM-proposed schema against the real sheets and columns.
+
+    Returns the cleaned schema plus human-readable warnings for the UI. Anything
+    referencing a sheet or column that does not exist is dropped rather than
+    allowed to fail later at ingest time with a Cypher error.
     """
     warnings: list[str] = []
-    valid_columns = {c["name"] for c in profile["columns"]}
+    by_sheet = {p["sheetName"]: {c["name"] for c in p["columns"]} for p in profiles}
 
     cleaned_nodes = []
     seen_labels: set[str] = set()
@@ -152,82 +194,135 @@ def validate_schema(schema: dict, profile: dict) -> tuple[dict, list[str]]:
     for node in schema.get("nodes") or []:
         label = _pascal(node.get("label", ""))
         if not label or label in RESERVED_LABELS:
-            warnings.append(f"Dropped node with reserved or empty label: {node.get('label')!r}")
+            warnings.append(f"Dropped node with reserved or empty label {node.get('label')!r}")
             continue
         if label in seen_labels:
             warnings.append(f"Dropped duplicate node label {label!r}")
             continue
 
-        key_column = node.get("keyColumn")
-        if key_column not in valid_columns:
-            warnings.append(
-                f"Node {label!r} referenced unknown key column {key_column!r} and was dropped"
-            )
-            continue
+        # Accept the single-source shape too, so a schema hand-edited in the
+        # browser or produced by an older prompt still loads.
+        raw_sources = node.get("sources")
+        if not raw_sources and node.get("keyColumn"):
+            raw_sources = [{
+                "sheet": node.get("sheet") or (profiles[0]["sheetName"] if profiles else ""),
+                "keyColumn": node["keyColumn"],
+                "properties": node.get("properties") or [],
+            }]
 
-        properties = []
-        seen_props = {_camel(node.get("key") or key_column)}
-        for prop in node.get("properties") or []:
-            column = prop.get("column")
-            if column not in valid_columns:
+        key = _camel(node.get("key") or "id")
+        sources = []
+
+        for source in raw_sources or []:
+            sheet = _resolve_sheet(source.get("sheet", ""), by_sheet)
+            if sheet is None:
                 warnings.append(
-                    f"Property {prop.get('name')!r} on {label!r} referenced unknown column "
-                    f"{column!r} and was dropped"
+                    f"Node {label!r} referenced unknown sheet {source.get('sheet')!r}; that source was dropped"
                 )
                 continue
-            name = _camel(prop.get("name") or column)
-            if name in seen_props:
+
+            columns = by_sheet[sheet]
+            key_column = source.get("keyColumn")
+            if key_column not in columns:
+                warnings.append(
+                    f"Node {label!r} referenced unknown key column {key_column!r} "
+                    f"in sheet {sheet!r}; that source was dropped"
+                )
                 continue
-            seen_props.add(name)
-            properties.append({"name": name, "column": column})
+
+            properties = []
+            seen_props = {key}
+            for prop in source.get("properties") or []:
+                column = prop.get("column")
+                if column not in columns:
+                    warnings.append(
+                        f"Property {prop.get('name')!r} on {label!r} referenced unknown "
+                        f"column {column!r} in {sheet!r} and was dropped"
+                    )
+                    continue
+                name = _camel(prop.get("name") or column)
+                if name in seen_props:
+                    continue
+                seen_props.add(name)
+                properties.append({"name": name, "column": column})
+
+            sources.append({"sheet": sheet, "keyColumn": key_column, "properties": properties})
+
+        if not sources:
+            warnings.append(f"Dropped node {label!r} — it had no usable source")
+            continue
 
         seen_labels.add(label)
-        cleaned_nodes.append(
-            {
-                "label": label,
-                "key": _camel(node.get("key") or key_column),
-                "keyColumn": key_column,
-                "properties": properties,
-                "reason": node.get("reason", ""),
-            }
-        )
+        cleaned_nodes.append({
+            "label": label,
+            "key": key,
+            "sources": sources,
+            "reason": node.get("reason", ""),
+        })
+
+    node_sheets = {n["label"]: {s["sheet"] for s in n["sources"]} for n in cleaned_nodes}
 
     cleaned_rels = []
-    seen_rels: set[tuple[str, str, str]] = set()
+    seen_rels: set[tuple[str, str, str, str]] = set()
 
     for rel in schema.get("relationships") or []:
-        source = _pascal(rel.get("from", ""))
-        target = _pascal(rel.get("to", ""))
+        source_label = _pascal(rel.get("from", ""))
+        target_label = _pascal(rel.get("to", ""))
         rel_type = _upper_snake(rel.get("type", ""))
 
-        if source not in seen_labels or target not in seen_labels:
+        if source_label not in seen_labels or target_label not in seen_labels:
             warnings.append(
-                f"Dropped relationship {rel_type} because {source} or {target} is not a node"
+                f"Dropped {rel_type} — {source_label} or {target_label} is not a node"
             )
             continue
-        if source == target:
-            warnings.append(f"Dropped self-referencing relationship {rel_type} on {source}")
+        if source_label == target_label:
+            warnings.append(f"Dropped self-referencing relationship {rel_type} on {source_label}")
             continue
 
-        signature = (source, rel_type, target)
+        # Both endpoints must be present in the same sheet, otherwise there is
+        # no row that carries both sides and the relationship can never be built.
+        shared = node_sheets[source_label] & node_sheets[target_label]
+        if not shared:
+            warnings.append(
+                f"Dropped {source_label}-[:{rel_type}]->{target_label} — no single sheet "
+                f"contains both, so there is no row linking them"
+            )
+            continue
+
+        sheet = _resolve_sheet(rel.get("sheet", ""), by_sheet)
+        if sheet not in shared:
+            chosen = sorted(shared)[0]
+            if sheet is not None:
+                warnings.append(
+                    f"{rel_type} named sheet {sheet!r}, which lacks one endpoint; used {chosen!r} instead"
+                )
+            sheet = chosen
+
+        signature = (source_label, rel_type, target_label, sheet)
         if signature in seen_rels:
             continue
         seen_rels.add(signature)
 
-        cleaned_rels.append(
-            {"type": rel_type, "from": source, "to": target, "reason": rel.get("reason", "")}
-        )
+        cleaned_rels.append({
+            "type": rel_type,
+            "from": source_label,
+            "to": target_label,
+            "sheet": sheet,
+            "reason": rel.get("reason", ""),
+        })
 
     if not cleaned_nodes:
         raise ValueError(
-            "Could not derive any valid nodes from this sheet. "
-            "Check that it has headers in the first row."
+            "Could not derive any valid nodes from these sheets. "
+            "Check that each has headers in the first row."
         )
 
+    default_name = profiles[0]["sheetName"] if profiles else "Dataset"
     return (
         {
-            "datasetName": schema.get("datasetName") or profile["filename"],
+            "datasetName": schema.get("datasetName") or default_name,
             "summary": schema.get("summary", ""),
+            "sheets": [p["sheetName"] for p in profiles],
             "nodes": cleaned_nodes,
             "relationships": cleaned_rels,
         },
@@ -235,25 +330,39 @@ def validate_schema(schema: dict, profile: dict) -> tuple[dict, list[str]]:
     )
 
 
-def propose_schema(profile: dict, hint: str | None = None) -> tuple[dict, list[str]]:
-    """Ask the model for an initial schema, then validate it against reality."""
-    user = _profile_for_prompt(profile)
-    if hint:
+def join_report(schema: dict) -> list[dict]:
+    """Which nodes are fed by more than one sheet — the cross-sheet joins."""
+    return [
+        {"label": n["label"], "key": n["key"],
+         "sheets": [s["sheet"] for s in n["sources"]],
+         "keyColumns": [s["keyColumn"] for s in n["sources"]]}
+        for n in schema["nodes"]
+        if len(n["sources"]) > 1
+    ]
+
+
+def propose_schema(profiles: list[dict], hint: str | None = None) -> tuple[dict, list[str]]:
+    """Ask the model for a schema across all sheets, then validate it."""
+    user = profiles_for_prompt(profiles)
+    if len(profiles) > 1:
         user += (
-            f"\n\nThe user has given this additional context about what they want "
-            f"to analyse — weight it heavily:\n{hint}"
+            f"\n\nThere are {len(profiles)} tables. Look carefully for entities that "
+            f"appear in more than one of them and model each as a SINGLE node with "
+            f"multiple sources."
         )
+    if hint:
+        user += f"\n\nThe user wants to analyse this — weight it heavily:\n{hint}"
 
-    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=2048)
-    return validate_schema(raw, profile)
+    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=3000)
+    return validate_schema(raw, profiles)
 
 
-def refine_schema(profile: dict, schema: dict, instruction: str) -> tuple[dict, list[str]]:
+def refine_schema(profiles: list[dict], schema: dict, instruction: str) -> tuple[dict, list[str]]:
     """Apply a natural-language edit to an existing schema."""
     user = (
-        f"{_profile_for_prompt(profile)}\n\n"
+        f"{profiles_for_prompt(profiles)}\n\n"
         f"CURRENT SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
         f"USER INSTRUCTION:\n{instruction}"
     )
-    raw = complete_json(REFINE_PROMPT, user, temperature=0.1, max_tokens=2048)
-    return validate_schema(raw, profile)
+    raw = complete_json(REFINE_PROMPT, user, temperature=0.1, max_tokens=3000)
+    return validate_schema(raw, profiles)

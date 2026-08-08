@@ -1,0 +1,24 @@
+# Files that must never reach the runtime container.
+#
+# zerops.yaml deploys `api/~`, which is the whole api directory. Without this
+# list, a local `zcli push` would ship:
+#   - api/.env      real credentials, and it would SHADOW the platform's
+#                   injected environment because main.py loads it at import
+#   - api/venv      a macOS-built virtualenv landing in a Linux container,
+#                   ahead of the vendored deps on PYTHONPATH
+# Both are silent failures rather than loud ones, which is why they are listed
+# here as well as in .gitignore — .gitignore only governs what reaches GitHub,
+# and `zcli push` uploads from disk.
+
+/api/.env
+/api/.env.*
+/api/venv
+/api/__pycache__
+*.pyc
+
+/web/node_modules
+/web/dist
+
+/neo4j-data
+/neo4j-logs
+.DS_Store

@@ -102,6 +102,61 @@ explicitly warn it corrupts databases, because file locks are per-mount only.
 
 ---
 
+## Saved endpoints — a prompt becomes a REST API
+
+Any question you can ask, you can also freeze into a parameterised HTTP endpoint.
+
+Describe it in plain English ("top distributors by revenue, filterable by city and
+tier") and the model writes read-only Cypher with **named parameters**, declaring
+each filter's name, type, whether it is required and its default. You see a live
+preview of real rows before saving. Saving stores it under a slug and hands back a
+ready-to-run curl:
+
+```bash
+curl 'https://your-api.zerops.app/api/data/top-distributors-by-revenue?city=Mumbai&tier=Gold&limit=10'
+```
+
+```json
+{
+  "endpoint": "top-distributors-by-revenue",
+  "params": {"city": "Mumbai", "tier": "Gold", "minRevenue": null, "limit": 10},
+  "count": 2,
+  "tookMs": 34,
+  "data": [
+    {"distributor": "Sharma Distributors", "city": "Mumbai", "tier": "Gold", "revenue": 1284300},
+    {"distributor": "Balaji Traders", "city": "Mumbai", "tier": "Gold", "revenue": 1109870}
+  ]
+}
+```
+
+What makes it a real endpoint rather than a saved result:
+
+- **Optional filters widen rather than break.** An omitted parameter resolves to
+  `null`, not to absent, so the `($city IS NULL OR d.city = $city)` idiom in the
+  query does the right thing. Omitting the key entirely makes Neo4j raise
+  `ParameterMissing`.
+- **Declared and used parameters must agree.** A parameter declared but never used
+  in the query is rejected, because it would present the caller with a filter that
+  silently does nothing. The reverse is rejected too.
+- **Values are always Cypher parameters**, never concatenated, and coerced to their
+  declared type — `?minRevenue=abc` returns `Parameter 'minRevenue': expected a
+  number, got 'abc'` rather than a 500.
+- **Unknown parameters are an error**, not ignored: `?citty=Mumbai` tells you so,
+  instead of quietly returning unfiltered data.
+- **`limit` is capped** at 1000 regardless of what the caller asks for, and the
+  stored Cypher is re-validated as read-only on **every** call — stored queries are
+  data, and data reaching a database deserves the same scrutiny twice.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/endpoints/draft` | Prompt → Cypher + params + preview, without saving |
+| POST | `/api/endpoints` | Save it, get back the URL and curl |
+| GET | `/api/datasets/{id}/endpoints` | List saved endpoints for a dataset |
+| DELETE | `/api/endpoints/{slug}` | Remove one |
+| GET | `/api/data/{slug}` | **The public data endpoint** |
+
+---
+
 ## Deploy it yourself
 
 ### 1. Provision the project
@@ -210,7 +265,8 @@ sheetgraph/
         ├── App.jsx               # three-step wizard
         ├── UploadStep.jsx        # drop zone + column profile
         ├── SchemaStep.jsx        # schema preview + NL refinement
-        ├── ExploreView.jsx       # graph + chat
+        ├── ExploreView.jsx       # graph + chat + API tab
+        ├── ApiPanel.jsx          # build and manage saved endpoints
         └── GraphCanvas.jsx       # Cytoscape rendering
 ```
 

@@ -20,11 +20,33 @@ IDENT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 _driver: Driver | None = None
 
 
+def database() -> str | None:
+    """
+    Which database to open sessions against.
+
+    Self-hosted Neo4j uses the default (`neo4j`), but Aura hands out an
+    instance-specific database name. Returning None lets the driver pick the
+    server's default rather than guessing wrong.
+    """
+    return os.getenv("NEO4J_DATABASE") or None
+
+
+def open_session(**kwargs):
+    """Always go through here so the database name is applied consistently."""
+    name = database()
+    if name:
+        kwargs["database"] = name
+    return driver().session(**kwargs)
+
+
 def driver() -> Driver:
     global _driver
     if _driver is None:
         uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        user = os.getenv("NEO4J_USER", "neo4j")
+        # Aura's connection snippet uses NEO4J_USERNAME; the self-hosted
+        # convention is NEO4J_USER. Accept either so the same image runs
+        # against a Zerops Docker service or Aura with no code change.
+        user = os.getenv("NEO4J_USER") or os.getenv("NEO4J_USERNAME") or "neo4j"
         password = os.getenv("NEO4J_PASSWORD", "password")
         _driver = GraphDatabase.driver(
             uri,
@@ -46,7 +68,7 @@ def wait_for_neo4j(timeout: int = 120) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with driver().session() as session:
+            with open_session() as session:
                 session.run("RETURN 1").consume()
             return True
         except Exception:
@@ -74,117 +96,209 @@ def safe_identifier(value: str, kind: str) -> str:
 # ─────────────────────────────────────────────
 
 
-def ensure_constraints(schema: dict) -> None:
-    """One uniqueness constraint per node label, scoped by dataset."""
-    with driver().session() as session:
-        for node in schema["nodes"]:
-            label = safe_identifier(node["label"], "label")
-            key = safe_identifier(node["key"], "property")
-            session.run(
-                f"CREATE CONSTRAINT IF NOT EXISTS "
-                f"FOR (n:`{label}`) REQUIRE (n.`{key}`, n._ds) IS UNIQUE"
-            ).consume()
+def ensure_constraints(schema: dict) -> list[str]:
+    """
+    Create one uniqueness constraint per node label, scoped by dataset.
+
+    Constraints are an optimisation and a safety net, not a correctness
+    requirement: ingest MERGEs on (key, _ds) either way. Managed Neo4j tiers
+    differ in what they allow — composite uniqueness in particular is not
+    available everywhere — so a rejected constraint degrades to a warning
+    rather than failing the whole load. Returns the warnings for the caller
+    to surface.
+    """
+    warnings: list[str] = []
+
+    for node in schema["nodes"]:
+        label = safe_identifier(node["label"], "label")
+        key = safe_identifier(node["key"], "property")
+
+        attempts = [
+            # Preferred: unique per (key, dataset), so two datasets may share a key.
+            f"CREATE CONSTRAINT IF NOT EXISTS "
+            f"FOR (n:`{label}`) REQUIRE (n.`{key}`, n._ds) IS UNIQUE",
+            # Fallback for tiers without composite uniqueness. Only safe while a
+            # single dataset is loaded per label, hence the warning below.
+            f"CREATE CONSTRAINT IF NOT EXISTS "
+            f"FOR (n:`{label}`) REQUIRE n.`{key}` IS UNIQUE",
+        ]
+
+        for index, statement in enumerate(attempts):
+            try:
+                with open_session() as session:
+                    session.run(statement).consume()
+                if index > 0:
+                    warnings.append(
+                        f"{label}: composite uniqueness is unavailable on this Neo4j, "
+                        f"so a single-property constraint on {key} was used instead."
+                    )
+                break
+            except Exception as exc:
+                if index == len(attempts) - 1:
+                    warnings.append(
+                        f"{label}: could not create a uniqueness constraint ({exc}). "
+                        f"Loading anyway — MERGE still deduplicates."
+                    )
+
+    return warnings
 
 
-def _node_rows(records: list[dict], node: dict, dataset_id: str) -> list[dict]:
-    """Project raw sheet rows onto one node label, deduplicated by key."""
-    key_column = node["keyColumn"]
+def _node_rows(node: dict, sheets: dict, dataset_id: str) -> tuple[list[dict], dict | None]:
+    """
+    Project every source sheet of one node label into deduplicated rows.
+
+    A node fed by several sheets is the whole point of multi-sheet upload: the
+    same key seen in two sheets produces ONE row whose properties are the union
+    of both. Also returns per-sheet key sets so the caller can report how many
+    keys actually overlapped — a join that silently matched nothing otherwise
+    looks identical to one that worked.
+    """
     seen: dict = {}
+    keys_per_sheet: dict = {}
 
-    for row in records:
-        key_value = row.get(key_column)
-        if key_value is None or key_value == "":
-            continue
-        key_value = str(key_value)
+    for source in node["sources"]:
+        records = sheets.get(source["sheet"], [])
+        key_column = source["keyColumn"]
+        sheet_keys: set = set()
 
-        props = {}
-        for prop in node["properties"]:
-            value = row.get(prop["column"])
-            if value is not None and value != "":
-                props[prop["name"]] = value
+        for row in records:
+            key_value = row.get(key_column)
+            if key_value is None or key_value == "":
+                continue
+            key_value = str(key_value).strip()
+            if not key_value:
+                continue
+            sheet_keys.add(key_value)
 
-        # Later rows enrich earlier ones rather than replacing them, so a
-        # sparse row cannot blank out properties another row supplied.
-        if key_value in seen:
-            seen[key_value]["props"].update(props)
-        else:
-            seen[key_value] = {"key": key_value, "props": props, "_ds": dataset_id}
+            props = {}
+            for prop in source["properties"]:
+                value = row.get(prop["column"])
+                if value is not None and value != "":
+                    props[prop["name"]] = value
 
-    return list(seen.values())
+            # Later rows enrich earlier ones rather than replacing them, so a
+            # sparse row cannot blank out properties another row supplied — and
+            # a master sheet can add detail to a key first seen in a
+            # transaction sheet.
+            if key_value in seen:
+                seen[key_value]["props"].update(props)
+            else:
+                seen[key_value] = {"key": key_value, "props": props, "_ds": dataset_id}
+
+        keys_per_sheet[source["sheet"]] = sheet_keys
+
+    overlap = None
+    if len(keys_per_sheet) > 1:
+        shared = set.intersection(*keys_per_sheet.values())
+        overlap = {
+            "sheets": list(keys_per_sheet),
+            "perSheet": {k: len(v) for k, v in keys_per_sheet.items()},
+            "matched": len(shared),
+            "total": len(seen),
+        }
+
+    return list(seen.values()), overlap
 
 
-def _rel_rows(
-    records: list[dict], rel: dict, nodes_by_label: dict, dataset_id: str
-) -> list[dict]:
-    """Every sheet row that has both endpoints becomes one relationship."""
-    source = nodes_by_label[rel["from"]]
-    target = nodes_by_label[rel["to"]]
+def _rel_rows(rel: dict, node_index: dict, sheets: dict, dataset_id: str) -> list[dict]:
+    """Every row of the relationship's sheet that carries both endpoints."""
+    sheet = rel["sheet"]
+    records = sheets.get(sheet, [])
+
+    from_col = node_index[rel["from"]]["bySheet"][sheet]
+    to_col = node_index[rel["to"]]["bySheet"][sheet]
 
     pairs = set()
     for row in records:
-        from_value = row.get(source["keyColumn"])
-        to_value = row.get(target["keyColumn"])
+        from_value = row.get(from_col)
+        to_value = row.get(to_col)
         if from_value in (None, "") or to_value in (None, ""):
             continue
-        pairs.add((str(from_value), str(to_value)))
+        pairs.add((str(from_value).strip(), str(to_value).strip()))
 
-    return [{"from": f, "to": t, "_ds": dataset_id} for f, t in pairs]
+    return [{"from": f, "to": t, "_ds": dataset_id} for f, t in pairs if f and t]
 
 
-def ingest(schema: dict, records: list[dict], dataset_id: str) -> dict:
+def ingest(schema: dict, sheets: dict, dataset_id: str) -> dict:
     """
-    Load the sheet into the graph according to the schema.
+    Load every uploaded sheet into the graph according to the schema.
 
-    Idempotent: MERGE on (key, dataset) means re-running is safe, which is
-    the mitigation for the Zerops Docker volume not being contractually
-    durable across deploys.
+    `sheets` maps sheet name -> list of row dicts. Idempotent: MERGE on
+    (key, dataset) means re-running is safe, which is the mitigation for the
+    Zerops Docker volume not being contractually durable across deploys.
     """
-    ensure_constraints(schema)
-    nodes_by_label = {n["label"]: n for n in schema["nodes"]}
+    constraint_warnings = ensure_constraints(schema)
 
-    counts = {"nodes": 0, "relationships": 0, "byLabel": {}, "byType": {}}
+    # keyColumn per (label, sheet), for resolving relationship endpoints.
+    node_index = {
+        n["label"]: {
+            "key": n["key"],
+            "bySheet": {s["sheet"]: s["keyColumn"] for s in n["sources"]},
+        }
+        for n in schema["nodes"]
+    }
 
-    with driver().session() as session:
+    counts = {"nodes": 0, "relationships": 0, "byLabel": {}, "byType": {},
+              "joins": [], "warnings": constraint_warnings}
+
+    with open_session() as session:
         for node in schema["nodes"]:
             label = safe_identifier(node["label"], "label")
             key = safe_identifier(node["key"], "property")
-            rows = _node_rows(records, node, dataset_id)
+            rows, overlap = _node_rows(node, sheets, dataset_id)
 
             for start in range(0, len(rows), BATCH_SIZE):
                 batch = rows[start : start + BATCH_SIZE]
-                session.run(
-                    f"UNWIND $batch AS row "
-                    f"MERGE (n:`{label}` {{`{key}`: row.key, _ds: row._ds}}) "
-                    f"SET n += row.props",
-                    batch=batch,
-                ).consume()
+                try:
+                    session.run(
+                        f"UNWIND $batch AS row "
+                        f"MERGE (n:`{label}` {{`{key}`: row.key, _ds: row._ds}}) "
+                        f"SET n += row.props",
+                        batch=batch,
+                    ).consume()
+                except Exception as exc:
+                    # Name the node and show one offending row — "ingest failed"
+                    # on its own gives you nowhere to start.
+                    sample = batch[0] if batch else {}
+                    raise RuntimeError(
+                        f"Loading :{label} failed at row {start + 1} of {len(rows)}. "
+                        f"{type(exc).__name__}: {exc}. "
+                        f"First row in this batch: {sample}"
+                    ) from exc
 
             counts["byLabel"][label] = len(rows)
             counts["nodes"] += len(rows)
+            if overlap:
+                counts["joins"].append({"label": label, **overlap})
 
         for rel in schema["relationships"]:
             rel_type = safe_identifier(rel["type"], "relationship type")
-            source = nodes_by_label[rel["from"]]
-            target = nodes_by_label[rel["to"]]
-            from_label = safe_identifier(source["label"], "label")
-            to_label = safe_identifier(target["label"], "label")
-            from_key = safe_identifier(source["key"], "property")
-            to_key = safe_identifier(target["key"], "property")
+            from_label = safe_identifier(rel["from"], "label")
+            to_label = safe_identifier(rel["to"], "label")
+            from_key = safe_identifier(node_index[rel["from"]]["key"], "property")
+            to_key = safe_identifier(node_index[rel["to"]]["key"], "property")
 
-            rows = _rel_rows(records, rel, nodes_by_label, dataset_id)
+            rows = _rel_rows(rel, node_index, sheets, dataset_id)
 
             for start in range(0, len(rows), BATCH_SIZE):
                 batch = rows[start : start + BATCH_SIZE]
-                session.run(
-                    f"UNWIND $batch AS row "
-                    f"MATCH (a:`{from_label}` {{`{from_key}`: row.from, _ds: row._ds}}) "
-                    f"MATCH (b:`{to_label}` {{`{to_key}`: row.to, _ds: row._ds}}) "
-                    f"MERGE (a)-[r:`{rel_type}`]->(b)",
-                    batch=batch,
-                ).consume()
+                try:
+                    session.run(
+                        f"UNWIND $batch AS row "
+                        f"MATCH (a:`{from_label}` {{`{from_key}`: row.from, _ds: row._ds}}) "
+                        f"MATCH (b:`{to_label}` {{`{to_key}`: row.to, _ds: row._ds}}) "
+                        f"MERGE (a)-[r:`{rel_type}`]->(b)",
+                        batch=batch,
+                    ).consume()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Linking (:{from_label})-[:{rel_type}]->(:{to_label}) from sheet "
+                        f"'{rel['sheet']}' failed at row {start + 1} of {len(rows)}. "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
 
-            label = f"{rel['from']}-[:{rel_type}]->{rel['to']}"
-            counts["byType"][label] = len(rows)
+            signature = f"{rel['from']}-[:{rel_type}]->{rel['to']}"
+            counts["byType"][signature] = len(rows)
             counts["relationships"] += len(rows)
 
     return counts
@@ -195,44 +309,49 @@ def ingest(schema: dict, records: list[dict], dataset_id: str) -> dict:
 # ─────────────────────────────────────────────
 
 
-def save_dataset(dataset_id: str, name: str, schema: dict, profile: dict, counts: dict) -> None:
+def save_dataset(dataset_id: str, name: str, schema: dict, profiles: list, counts: dict) -> None:
     """
     Persist the schema alongside the data.
 
-    This is what makes the chat work on arbitrary sheets: at query time we
-    read the schema back out and inject it into the prompt, instead of
-    hardcoding a domain like a single-purpose app would.
+    This is what makes the chat work on arbitrary sheets: at query time we read
+    the schema back out and inject it into the prompt, instead of hardcoding a
+    domain like a single-purpose app would.
     """
     import json
 
-    with driver().session() as session:
+    with open_session() as session:
         session.run(
             """
             MERGE (d:_Dataset {id: $id})
             SET d.name = $name,
                 d.schema = $schema,
-                d.columns = $columns,
+                d.sheets = $sheets,
+                d.joins = $joins,
                 d.rowCount = $rowCount,
+                d.sheetCount = $sheetCount,
                 d.nodeCount = $nodeCount,
                 d.relCount = $relCount,
-                d.filename = $filename,
                 d.createdAt = coalesce(d.createdAt, datetime())
             """,
             id=dataset_id,
             name=name,
             schema=json.dumps(schema),
-            columns=json.dumps([c["name"] for c in profile["columns"]]),
-            rowCount=profile["rowCount"],
+            sheets=json.dumps([
+                {"name": p["sheetName"], "rows": p["rowCount"], "columns": p["columnCount"]}
+                for p in profiles
+            ]),
+            joins=json.dumps(counts.get("joins", [])),
+            rowCount=sum(p["rowCount"] for p in profiles),
+            sheetCount=len(profiles),
             nodeCount=counts["nodes"],
             relCount=counts["relationships"],
-            filename=profile["filename"],
         ).consume()
 
 
 def get_dataset(dataset_id: str) -> dict | None:
     import json
 
-    with driver().session() as session:
+    with open_session() as session:
         record = session.run(
             "MATCH (d:_Dataset {id: $id}) RETURN d", id=dataset_id
         ).single()
@@ -242,32 +361,46 @@ def get_dataset(dataset_id: str) -> dict | None:
 
     data = dict(record["d"])
     data["schema"] = json.loads(data["schema"])
-    data["columns"] = json.loads(data.get("columns", "[]"))
+    data["sheets"] = json.loads(data.get("sheets") or "[]")
+    data["joins"] = json.loads(data.get("joins") or "[]")
     if "createdAt" in data:
         data["createdAt"] = str(data["createdAt"])
     return data
 
 
 def list_datasets() -> list[dict]:
-    with driver().session() as session:
+    import json
+
+    with open_session() as session:
         rows = session.run(
             """
             MATCH (d:_Dataset)
-            RETURN d.id AS id, d.name AS name, d.filename AS filename,
+            OPTIONAL MATCH (e:_Endpoint {datasetId: d.id})
+            RETURN d.id AS id, d.name AS name, d.sheetCount AS sheetCount,
                    d.rowCount AS rowCount, d.nodeCount AS nodeCount,
-                   d.relCount AS relCount, toString(d.createdAt) AS createdAt
+                   d.relCount AS relCount, d.sheets AS sheets,
+                   count(e) AS endpointCount,
+                   toString(d.createdAt) AS createdAt
             ORDER BY d.createdAt DESC
             """
         ).data()
+
+    for row in rows:
+        row["sheets"] = json.loads(row.get("sheets") or "[]")
     return rows
 
 
 def delete_dataset(dataset_id: str) -> int:
-    with driver().session() as session:
+    with open_session() as session:
         result = session.run(
             "MATCH (n) WHERE n._ds = $id DETACH DELETE n RETURN count(n) AS deleted",
             id=dataset_id,
         ).single()
+        # Saved endpoints carry no _ds of their own, so they survive the sweep
+        # above and would keep serving against data that no longer exists.
+        session.run(
+            "MATCH (e:_Endpoint {datasetId: $id}) DETACH DELETE e", id=dataset_id
+        ).consume()
         session.run("MATCH (d:_Dataset {id: $id}) DETACH DELETE d", id=dataset_id).consume()
     return result["deleted"] if result else 0
 
@@ -284,7 +417,7 @@ def overview(dataset_id: str, node_limit: int = 150, edge_limit: int = 300) -> d
     Returning every node would melt the browser on a large sheet, so we take
     a bounded sample and let the user expand outward from there.
     """
-    with driver().session() as session:
+    with open_session() as session:
         # Sample evenly across relationship types rather than taking the first
         # N edges the planner happens to return. Without this, one high-volume
         # relationship crowds every other one out of the opening view.
@@ -344,7 +477,7 @@ def overview(dataset_id: str, node_limit: int = 150, edge_limit: int = 300) -> d
 
 
 def expand(element_id: str, limit: int = 40) -> dict:
-    with driver().session() as session:
+    with open_session() as session:
         rows = session.run(
             """
             MATCH (n)-[r]-(m)
@@ -370,7 +503,7 @@ def expand(element_id: str, limit: int = 40) -> dict:
 
 
 def stats(dataset_id: str) -> dict:
-    with driver().session() as session:
+    with open_session() as session:
         labels = session.run(
             """
             MATCH (n) WHERE n._ds = $id

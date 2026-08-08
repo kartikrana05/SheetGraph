@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from './api'
 import GraphCanvas from './GraphCanvas'
+import ApiPanel from './ApiPanel'
 import { colorFor } from './palette'
 
 function ResultTable({ rows }) {
@@ -68,9 +69,18 @@ export default function ExploreView({ dataset, onReset }) {
   const [selected, setSelected] = useState(null)
   const [highlight, setHighlight] = useState([])
   const [error, setError] = useState(null)
+  const [tab, setTab] = useState('ask')
   const logRef = useRef(null)
 
   const labels = dataset.schema.nodes.map((n) => n.label)
+  const sheetCount = (dataset.schema.sheets || []).length
+  // Reported by the ingest: how many keys actually overlapped between sheets.
+  // A join that matched nothing is worth surfacing — it looks identical to a
+  // working one until you ask a question that crosses it.
+  const joins = dataset.counts?.joins || []
+  const keyByLabel = Object.fromEntries(
+    dataset.schema.nodes.map((n) => [n.label, n.key])
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -164,6 +174,7 @@ export default function ExploreView({ dataset, onReset }) {
           <GraphCanvas
             data={graph}
             labels={labels}
+            keyByLabel={keyByLabel}
             highlight={highlight}
             onSelect={setSelected}
           />
@@ -216,11 +227,46 @@ export default function ExploreView({ dataset, onReset }) {
               <div style={{ color: 'var(--text-dim)', fontSize: 12 }}>
                 {dataset.counts.nodes.toLocaleString()} nodes ·{' '}
                 {dataset.counts.relationships.toLocaleString()} relationships
+                {sheetCount > 1 && ` · ${sheetCount} sheets`}
               </div>
             </div>
             <button className="ghost" onClick={onReset}>New sheet</button>
           </div>
+          <div className="tabs">
+            <button
+              className={`tab ${tab === 'ask' ? 'active' : ''}`}
+              onClick={() => setTab('ask')}
+            >
+              Ask
+            </button>
+            <button
+              className={`tab ${tab === 'api' ? 'active' : ''}`}
+              onClick={() => setTab('api')}
+            >
+              Build an API
+            </button>
+          </div>
         </div>
+
+        {tab === 'api' ? (
+          <div className="chat-log"><ApiPanel dataset={dataset} /></div>
+        ) : (
+        <>
+        {joins.length > 0 && (
+          <div className="stat-strip" style={{ display: 'block' }}>
+            {joins.map((join) => (
+              <div key={join.label} style={{ marginBottom: 2 }}>
+                <b style={{ color: join.matched ? 'var(--good)' : 'var(--warn)' }}>
+                  {join.label}
+                </b>{' '}
+                joined {join.sheets.join(' + ')} —{' '}
+                {join.matched
+                  ? <><b>{join.matched}</b> keys matched of {join.total}</>
+                  : <span style={{ color: 'var(--warn)' }}>no keys matched</span>}
+              </div>
+            ))}
+          </div>
+        )}
 
         {stats && (
           <div className="stat-strip">
@@ -263,6 +309,8 @@ export default function ExploreView({ dataset, onReset }) {
             Ask
           </button>
         </div>
+        </>
+        )}
       </div>
     </div>
   )

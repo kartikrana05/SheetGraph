@@ -153,9 +153,13 @@ def profile_column(series: pd.Series, display_name: str, index: int) -> dict:
     return profile
 
 
+MIN_ROWS_PER_TABLE = 1
+MAX_TABLES_PER_FILE = 12
+
+
 def read_sheet(raw: bytes, filename: str, sheet_name: str | None = None) -> tuple[pd.DataFrame, list[str]]:
     """
-    Read an uploaded file into a DataFrame.
+    Read one table out of an uploaded file.
 
     Returns the frame plus the list of available sheet names (empty for CSV),
     so the UI can offer a sheet picker for multi-tab workbooks.
@@ -173,6 +177,42 @@ def read_sheet(raw: bytes, filename: str, sheet_name: str | None = None) -> tupl
     target = sheet_name if sheet_name in names else names[0]
     frame = workbook.parse(target)
     return frame, names
+
+
+def read_tables(raw: bytes, filename: str) -> list[tuple[str, pd.DataFrame]]:
+    """
+    Read EVERY table an upload contains.
+
+    A CSV yields one. A workbook yields one per tab, because a multi-tab
+    workbook is the most common way people already store related tables —
+    orders on one tab, the customer master on another — and those tabs are
+    exactly what we want to join in the graph.
+
+    Returns (display name, frame) pairs. Empty tabs are dropped rather than
+    surfaced as tables with no columns.
+    """
+    lower = filename.lower()
+    stem = filename.rsplit(".", 1)[0]
+
+    if lower.endswith((".csv", ".tsv", ".txt")):
+        sep = "\t" if lower.endswith(".tsv") else None
+        frame = clean_frame(pd.read_csv(io.BytesIO(raw), sep=sep, engine="python"))
+        return [(stem, frame)] if not frame.empty else []
+
+    workbook = pd.ExcelFile(io.BytesIO(raw))
+    tables: list[tuple[str, pd.DataFrame]] = []
+    tab_names = list(workbook.sheet_names)[:MAX_TABLES_PER_FILE]
+
+    for tab in tab_names:
+        frame = clean_frame(workbook.parse(tab))
+        if frame.empty or len(frame) < MIN_ROWS_PER_TABLE or len(frame.columns) < 2:
+            continue
+        # Only qualify the name when it is ambiguous — "orders" reads better
+        # than "orders › Sheet1" when there is only one tab.
+        name = stem if len(tab_names) == 1 else f"{stem} › {tab}"
+        tables.append((name, frame))
+
+    return tables
 
 
 def clean_frame(frame: pd.DataFrame) -> pd.DataFrame:
@@ -202,8 +242,18 @@ def clean_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.rename(columns=renamed)
 
 
-def profile_dataframe(frame: pd.DataFrame, filename: str, sheet_names: list[str]) -> dict:
-    """Build the full profile payload sent to the UI and to the LLM."""
+def profile_dataframe(
+    frame: pd.DataFrame,
+    filename: str,
+    sheet_names: list[str] | None = None,
+    sheet_name: str | None = None,
+) -> dict:
+    """
+    Build the full profile payload sent to the UI and to the LLM.
+
+    `sheetName` is the identity this table is known by everywhere downstream —
+    the schema references it, so it must be stable and unique across an upload.
+    """
     frame = clean_frame(frame)
 
     columns = [
@@ -218,8 +268,9 @@ def profile_dataframe(frame: pd.DataFrame, filename: str, sheet_names: list[str]
     ]
 
     return {
+        "sheetName": sheet_name or filename.rsplit(".", 1)[0],
         "filename": filename,
-        "sheetNames": sheet_names,
+        "sheetNames": sheet_names or [],
         "rowCount": int(len(frame)),
         "columnCount": int(len(frame.columns)),
         "columns": columns,
