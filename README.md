@@ -159,6 +159,9 @@ What makes it a real endpoint rather than a saved result:
 
 ## Deploy it yourself
 
+**Full runbook: [DEPLOY.md](DEPLOY.md)** — including troubleshooting and the
+Aura fallback. The short version:
+
 ### 1. Provision the project
 
 ```bash
