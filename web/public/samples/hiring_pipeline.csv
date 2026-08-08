@@ -1,0 +1,191 @@
+Candidate ID,Candidate Name,Role,Stage,Source,Recruiter,Location,Years Experience,Expected CTC (LPA),Applied On,Interview Score
+CAND-2201,Om Gupta,Product Manager,Tech Round,Campus,Priyanka Das,Bengaluru,11,29.5,2026-06-18,7.0
+CAND-2202,Om Iyer,Backend Engineer,Tech Round,Careers Page,Joel Fernandes,Remote,14,57.6,2026-03-23,6.0
+CAND-2203,Sara Reddy,Product Manager,Rejected,Agency,Joel Fernandes,Mumbai,13,49.0,2026-06-15,5.0
+CAND-2204,Isha Gupta,Frontend Engineer,Tech Round,Agency,Priyanka Das,Remote,2,61.1,2026-06-05,
+CAND-2205,Aarav Shah,Data Analyst,Onsite,LinkedIn,Priyanka Das,Hyderabad,4,17.8,2026-06-06,7.0
+CAND-2206,Sara Nair,Data Analyst,Rejected,Campus,Joel Fernandes,Hyderabad,14,19.2,2026-03-01,5.0
+CAND-2207,Kabir Iyer,Product Manager,Applied,Careers Page,Joel Fernandes,Mumbai,15,59.5,2026-05-02,
+CAND-2208,Isha Iyer,Product Manager,Applied,Campus,Priyanka Das,Remote,15,39.4,2026-05-06,8.0
+CAND-2209,Isha Iyer,QA Engineer,Hired,Campus,Nadia Rahman,Remote,5,40.3,2026-04-07,7.0
+CAND-2210,Sara Reddy,Frontend Engineer,Tech Round,LinkedIn,Nadia Rahman,Remote,11,30.8,2026-05-31,
+CAND-2211,Kabir Iyer,QA Engineer,Hired,Referral,Priyanka Das,Mumbai,5,51.1,2026-04-12,9.0
+CAND-2212,Tara Iyer,Data Analyst,Tech Round,Careers Page,Nadia Rahman,Remote,4,6.8,2026-07-11,7.0
+CAND-2213,Tara Shah,Product Manager,Tech Round,LinkedIn,Nadia Rahman,Mumbai,4,35.7,2026-04-18,9.0
+CAND-2214,Isha Shah,Product Manager,Applied,Referral,Nadia Rahman,Bengaluru,15,26.5,2026-06-01,5.0
+CAND-2215,Sara Bose,QA Engineer,Rejected,Careers Page,Nadia Rahman,Remote,0,49.9,2026-03-31,6.0
+CAND-2216,Rohan Reddy,Frontend Engineer,Hired,LinkedIn,Joel Fernandes,Mumbai,6,13.7,2026-03-21,8.0
+CAND-2217,Isha Nair,Backend Engineer,Rejected,Agency,Joel Fernandes,Bengaluru,6,12.4,2026-07-10,
+CAND-2218,Sara Nair,Data Analyst,Applied,Referral,Joel Fernandes,Bengaluru,3,52.2,2026-04-22,6.0
+CAND-2219,Rohan Reddy,Data Analyst,Applied,Referral,Nadia Rahman,Remote,11,26.8,2026-07-07,6.0
+CAND-2220,Isha Nair,QA Engineer,Rejected,Referral,Priyanka Das,Mumbai,6,62.9,2026-04-13,9.0
+CAND-2221,Aarav Reddy,Backend Engineer,Screening,Campus,Priyanka Das,Hyderabad,11,47.2,2026-04-17,8.0
+CAND-2222,Isha Gupta,Data Analyst,Onsite,Agency,Nadia Rahman,Mumbai,13,12.7,2026-05-20,
+CAND-2223,Sara Nair,QA Engineer,Screening,Agency,Joel Fernandes,Remote,1,10.9,2026-07-05,
+CAND-2224,Om Iyer,Product Manager,Offer,Careers Page,Priyanka Das,Hyderabad,7,38.7,2026-05-14,8.0
+CAND-2225,Neha Nair,Product Manager,Hired,Careers Page,Nadia Rahman,Bengaluru,15,45.7,2026-06-10,8.0
+CAND-2226,Isha Nair,Frontend Engineer,Onsite,Agency,Priyanka Das,Bengaluru,5,9.8,2026-04-20,7.0
+CAND-2227,Neha Bose,Product Manager,Applied,LinkedIn,Joel Fernandes,Hyderabad,8,51.1,2026-07-27,7.0
+CAND-2228,Om Iyer,Product Manager,Hired,Campus,Joel Fernandes,Hyderabad,8,14.7,2026-06-25,
+CAND-2229,Isha Iyer,Product Manager,Onsite,LinkedIn,Priyanka Das,Mumbai,0,11.9,2026-03-14,
+CAND-2230,Sara Reddy,Backend Engineer,Screening,Agency,Priyanka Das,Remote,4,23.9,2026-03-25,
+CAND-2231,Sara Shah,Frontend Engineer,Tech Round,Agency,Joel Fernandes,Remote,10,53.8,2026-07-17,9.0
+CAND-2232,Aarav Nair,Product Manager,Applied,Agency,Joel Fernandes,Remote,12,32.1,2026-03-10,
+CAND-2233,Rohan Bose,Data Analyst,Hired,LinkedIn,Joel Fernandes,Hyderabad,4,24.4,2026-06-08,8.0
+CAND-2234,Isha Bose,Product Manager,Hired,Campus,Priyanka Das,Hyderabad,15,39.2,2026-04-10,9.0
+CAND-2235,Aarav Shah,Data Analyst,Onsite,Campus,Joel Fernandes,Remote,9,24.9,2026-03-08,
+CAND-2236,Rohan Iyer,Data Analyst,Rejected,Campus,Nadia Rahman,Remote,12,11.7,2026-05-28,7.0
+CAND-2237,Om Iyer,Backend Engineer,Hired,LinkedIn,Nadia Rahman,Mumbai,9,41.0,2026-03-17,7.0
+CAND-2238,Isha Iyer,Frontend Engineer,Applied,Campus,Joel Fernandes,Bengaluru,14,44.8,2026-06-17,9.0
+CAND-2239,Om Iyer,Backend Engineer,Hired,Agency,Priyanka Das,Bengaluru,10,28.3,2026-06-08,7.0
+CAND-2240,Isha Shah,Backend Engineer,Hired,LinkedIn,Joel Fernandes,Hyderabad,10,15.8,2026-05-16,7.0
+CAND-2241,Om Gupta,Product Manager,Hired,Referral,Priyanka Das,Mumbai,9,21.6,2026-05-16,8.0
+CAND-2242,Neha Bose,Backend Engineer,Hired,Campus,Nadia Rahman,Remote,8,10.0,2026-07-14,8.0
+CAND-2243,Om Gupta,Data Analyst,Rejected,Referral,Priyanka Das,Remote,9,31.5,2026-07-17,7.0
+CAND-2244,Neha Shah,Product Manager,Tech Round,Campus,Priyanka Das,Hyderabad,5,58.0,2026-07-11,5.0
+CAND-2245,Sara Gupta,Product Manager,Tech Round,Campus,Priyanka Das,Hyderabad,1,36.8,2026-06-02,8.0
+CAND-2246,Rohan Gupta,Frontend Engineer,Hired,Careers Page,Joel Fernandes,Hyderabad,10,56.8,2026-03-17,6.0
+CAND-2247,Om Iyer,Data Analyst,Hired,LinkedIn,Joel Fernandes,Mumbai,12,20.1,2026-04-08,6.0
+CAND-2248,Aarav Gupta,Data Analyst,Onsite,Agency,Priyanka Das,Hyderabad,13,44.2,2026-03-10,6.0
+CAND-2249,Rohan Iyer,Frontend Engineer,Applied,Careers Page,Joel Fernandes,Mumbai,1,62.9,2026-07-03,
+CAND-2250,Aarav Nair,Data Analyst,Offer,Careers Page,Nadia Rahman,Hyderabad,11,45.6,2026-03-24,8.0
+CAND-2251,Rohan Gupta,Backend Engineer,Offer,Campus,Nadia Rahman,Remote,15,58.2,2026-04-30,
+CAND-2252,Tara Iyer,QA Engineer,Hired,Agency,Priyanka Das,Mumbai,13,18.9,2026-03-28,5.0
+CAND-2253,Neha Iyer,Product Manager,Onsite,Careers Page,Priyanka Das,Bengaluru,15,37.5,2026-03-29,7.0
+CAND-2254,Om Shah,Frontend Engineer,Tech Round,LinkedIn,Joel Fernandes,Hyderabad,11,54.5,2026-03-06,
+CAND-2255,Aarav Reddy,Frontend Engineer,Tech Round,Campus,Joel Fernandes,Remote,11,59.3,2026-04-01,9.0
+CAND-2256,Neha Shah,Product Manager,Applied,Agency,Joel Fernandes,Remote,2,61.2,2026-04-30,7.0
+CAND-2257,Neha Gupta,Product Manager,Hired,Careers Page,Priyanka Das,Hyderabad,1,22.2,2026-03-21,8.0
+CAND-2258,Sara Reddy,Product Manager,Rejected,Careers Page,Priyanka Das,Hyderabad,3,54.6,2026-05-06,9.0
+CAND-2259,Isha Iyer,Product Manager,Offer,Campus,Priyanka Das,Remote,14,47.0,2026-03-14,5.0
+CAND-2260,Sara Reddy,Frontend Engineer,Applied,Agency,Nadia Rahman,Remote,10,40.0,2026-03-29,5.0
+CAND-2261,Neha Bose,Frontend Engineer,Rejected,Campus,Priyanka Das,Hyderabad,10,32.6,2026-04-04,7.0
+CAND-2262,Rohan Reddy,QA Engineer,Rejected,Careers Page,Joel Fernandes,Mumbai,2,30.5,2026-04-16,8.0
+CAND-2263,Om Bose,Frontend Engineer,Applied,Referral,Priyanka Das,Mumbai,2,63.5,2026-04-20,7.0
+CAND-2264,Rohan Nair,Product Manager,Offer,Agency,Priyanka Das,Remote,4,11.3,2026-06-03,5.0
+CAND-2265,Isha Nair,QA Engineer,Onsite,Agency,Priyanka Das,Hyderabad,3,19.2,2026-04-22,6.0
+CAND-2266,Kabir Iyer,Product Manager,Onsite,LinkedIn,Joel Fernandes,Mumbai,6,64.7,2026-05-12,6.0
+CAND-2267,Om Gupta,Product Manager,Rejected,LinkedIn,Nadia Rahman,Remote,8,19.9,2026-06-24,6.0
+CAND-2268,Tara Bose,Product Manager,Applied,Referral,Joel Fernandes,Mumbai,10,63.5,2026-06-10,6.0
+CAND-2269,Om Reddy,Product Manager,Hired,Campus,Joel Fernandes,Bengaluru,3,38.9,2026-03-14,7.0
+CAND-2270,Neha Shah,Data Analyst,Offer,Campus,Priyanka Das,Bengaluru,0,21.0,2026-06-06,7.0
+CAND-2271,Om Reddy,Data Analyst,Screening,Campus,Nadia Rahman,Mumbai,8,16.0,2026-07-05,7.0
+CAND-2272,Sara Gupta,Backend Engineer,Tech Round,Campus,Joel Fernandes,Mumbai,8,12.9,2026-03-12,5.0
+CAND-2273,Sara Iyer,Data Analyst,Onsite,Careers Page,Joel Fernandes,Remote,10,31.7,2026-04-12,7.0
+CAND-2274,Sara Gupta,QA Engineer,Rejected,Agency,Nadia Rahman,Mumbai,4,9.2,2026-04-16,
+CAND-2275,Sara Iyer,Frontend Engineer,Hired,Agency,Joel Fernandes,Bengaluru,15,8.4,2026-05-31,9.0
+CAND-2276,Sara Shah,Product Manager,Applied,LinkedIn,Nadia Rahman,Remote,2,18.0,2026-05-12,5.0
+CAND-2277,Rohan Reddy,QA Engineer,Rejected,Careers Page,Priyanka Das,Mumbai,0,37.0,2026-07-25,5.0
+CAND-2278,Om Nair,Frontend Engineer,Rejected,Agency,Priyanka Das,Bengaluru,10,7.5,2026-04-01,8.0
+CAND-2279,Tara Bose,Backend Engineer,Rejected,Careers Page,Nadia Rahman,Bengaluru,2,33.2,2026-07-01,8.0
+CAND-2280,Kabir Bose,Backend Engineer,Tech Round,Referral,Priyanka Das,Hyderabad,10,61.9,2026-07-24,5.0
+CAND-2281,Neha Nair,Data Analyst,Tech Round,Referral,Priyanka Das,Bengaluru,12,11.5,2026-05-05,5.0
+CAND-2282,Neha Shah,Backend Engineer,Applied,LinkedIn,Nadia Rahman,Hyderabad,12,22.8,2026-04-09,
+CAND-2283,Kabir Shah,Product Manager,Hired,Careers Page,Priyanka Das,Mumbai,11,45.3,2026-06-03,9.0
+CAND-2284,Neha Shah,Product Manager,Onsite,Agency,Joel Fernandes,Hyderabad,2,50.6,2026-06-03,5.0
+CAND-2285,Om Reddy,Product Manager,Applied,Referral,Priyanka Das,Remote,14,45.9,2026-04-09,8.0
+CAND-2286,Isha Iyer,Product Manager,Onsite,Referral,Joel Fernandes,Remote,4,64.1,2026-05-16,6.0
+CAND-2287,Om Iyer,QA Engineer,Applied,Campus,Nadia Rahman,Bengaluru,3,36.1,2026-06-14,
+CAND-2288,Sara Reddy,QA Engineer,Rejected,Careers Page,Joel Fernandes,Remote,2,51.4,2026-03-05,
+CAND-2289,Sara Gupta,Frontend Engineer,Rejected,Agency,Nadia Rahman,Bengaluru,13,57.7,2026-05-16,7.0
+CAND-2290,Sara Reddy,Product Manager,Offer,Careers Page,Joel Fernandes,Mumbai,6,16.9,2026-05-06,
+CAND-2291,Om Bose,Backend Engineer,Applied,Agency,Nadia Rahman,Bengaluru,5,44.7,2026-06-26,8.0
+CAND-2292,Sara Iyer,QA Engineer,Rejected,Campus,Joel Fernandes,Hyderabad,9,11.2,2026-04-04,
+CAND-2293,Neha Nair,Backend Engineer,Hired,LinkedIn,Nadia Rahman,Mumbai,15,44.3,2026-05-01,8.0
+CAND-2294,Neha Nair,Data Analyst,Rejected,Agency,Nadia Rahman,Hyderabad,13,7.3,2026-04-12,5.0
+CAND-2295,Sara Shah,Product Manager,Applied,Agency,Priyanka Das,Mumbai,6,23.4,2026-06-09,
+CAND-2296,Tara Nair,Backend Engineer,Hired,Agency,Joel Fernandes,Hyderabad,9,8.2,2026-06-11,8.0
+CAND-2297,Sara Gupta,Backend Engineer,Offer,Referral,Joel Fernandes,Remote,2,21.8,2026-06-15,8.0
+CAND-2298,Isha Shah,QA Engineer,Hired,Careers Page,Joel Fernandes,Hyderabad,0,15.5,2026-04-19,8.0
+CAND-2299,Tara Shah,Frontend Engineer,Offer,LinkedIn,Priyanka Das,Remote,14,13.7,2026-05-15,8.0
+CAND-2300,Om Reddy,Data Analyst,Rejected,Agency,Nadia Rahman,Mumbai,9,46.8,2026-03-23,8.0
+CAND-2301,Rohan Gupta,Frontend Engineer,Screening,Campus,Joel Fernandes,Bengaluru,13,61.6,2026-07-05,7.0
+CAND-2302,Neha Gupta,QA Engineer,Applied,Referral,Joel Fernandes,Remote,11,45.9,2026-04-14,9.0
+CAND-2303,Aarav Nair,Data Analyst,Onsite,Referral,Priyanka Das,Mumbai,3,39.2,2026-07-03,7.0
+CAND-2304,Tara Iyer,Backend Engineer,Rejected,Campus,Joel Fernandes,Mumbai,3,47.7,2026-06-21,8.0
+CAND-2305,Isha Nair,QA Engineer,Offer,Referral,Priyanka Das,Bengaluru,3,15.9,2026-03-31,6.0
+CAND-2306,Tara Gupta,Data Analyst,Hired,Agency,Priyanka Das,Hyderabad,3,15.1,2026-06-02,7.0
+CAND-2307,Rohan Nair,Frontend Engineer,Onsite,Agency,Nadia Rahman,Mumbai,15,26.1,2026-07-08,5.0
+CAND-2308,Isha Iyer,Data Analyst,Hired,Agency,Joel Fernandes,Mumbai,4,50.4,2026-07-14,8.0
+CAND-2309,Neha Gupta,Product Manager,Onsite,Agency,Joel Fernandes,Remote,0,32.1,2026-03-03,9.0
+CAND-2310,Isha Nair,Data Analyst,Tech Round,Agency,Nadia Rahman,Hyderabad,1,29.2,2026-03-10,5.0
+CAND-2311,Aarav Reddy,QA Engineer,Tech Round,Agency,Joel Fernandes,Remote,10,59.6,2026-03-03,7.0
+CAND-2312,Rohan Reddy,Product Manager,Onsite,LinkedIn,Priyanka Das,Hyderabad,11,58.4,2026-06-12,6.0
+CAND-2313,Kabir Nair,Backend Engineer,Offer,Careers Page,Joel Fernandes,Mumbai,9,18.6,2026-07-09,9.0
+CAND-2314,Kabir Bose,Data Analyst,Rejected,LinkedIn,Nadia Rahman,Bengaluru,8,20.2,2026-05-17,8.0
+CAND-2315,Isha Reddy,Backend Engineer,Rejected,Careers Page,Joel Fernandes,Remote,3,8.8,2026-04-01,8.0
+CAND-2316,Kabir Bose,Backend Engineer,Onsite,Careers Page,Nadia Rahman,Mumbai,11,23.7,2026-07-25,5.0
+CAND-2317,Om Bose,Frontend Engineer,Applied,Careers Page,Priyanka Das,Mumbai,11,32.8,2026-04-07,8.0
+CAND-2318,Om Nair,Backend Engineer,Applied,Agency,Nadia Rahman,Hyderabad,6,32.3,2026-06-03,9.0
+CAND-2319,Om Bose,QA Engineer,Offer,Agency,Joel Fernandes,Hyderabad,13,64.8,2026-07-04,8.0
+CAND-2320,Rohan Gupta,QA Engineer,Screening,Agency,Priyanka Das,Hyderabad,4,63.1,2026-07-10,9.0
+CAND-2321,Isha Reddy,Frontend Engineer,Onsite,Agency,Nadia Rahman,Mumbai,11,60.4,2026-03-31,8.0
+CAND-2322,Isha Nair,Data Analyst,Offer,Careers Page,Nadia Rahman,Mumbai,3,27.9,2026-06-04,7.0
+CAND-2323,Kabir Shah,Backend Engineer,Rejected,LinkedIn,Nadia Rahman,Hyderabad,1,61.3,2026-05-18,7.0
+CAND-2324,Neha Gupta,Product Manager,Applied,Referral,Priyanka Das,Remote,2,57.4,2026-06-15,8.0
+CAND-2325,Kabir Bose,Product Manager,Tech Round,Agency,Joel Fernandes,Mumbai,4,35.8,2026-06-26,8.0
+CAND-2326,Sara Gupta,Data Analyst,Applied,Campus,Priyanka Das,Hyderabad,12,19.7,2026-06-10,7.0
+CAND-2327,Aarav Reddy,Product Manager,Hired,Careers Page,Priyanka Das,Bengaluru,5,47.7,2026-07-25,7.0
+CAND-2328,Isha Reddy,QA Engineer,Applied,LinkedIn,Priyanka Das,Bengaluru,6,50.3,2026-07-07,
+CAND-2329,Isha Reddy,QA Engineer,Screening,Referral,Joel Fernandes,Mumbai,7,55.0,2026-07-27,8.0
+CAND-2330,Isha Bose,QA Engineer,Tech Round,Agency,Priyanka Das,Bengaluru,15,56.9,2026-03-06,7.0
+CAND-2331,Om Gupta,Product Manager,Applied,Campus,Joel Fernandes,Hyderabad,8,11.4,2026-03-26,9.0
+CAND-2332,Rohan Iyer,Frontend Engineer,Screening,Careers Page,Nadia Rahman,Mumbai,9,62.2,2026-04-13,
+CAND-2333,Tara Gupta,Backend Engineer,Hired,Referral,Joel Fernandes,Hyderabad,3,24.9,2026-06-14,7.0
+CAND-2334,Kabir Shah,Backend Engineer,Applied,LinkedIn,Nadia Rahman,Mumbai,15,36.0,2026-07-08,8.0
+CAND-2335,Isha Iyer,Backend Engineer,Tech Round,Agency,Priyanka Das,Hyderabad,2,34.6,2026-06-13,6.0
+CAND-2336,Aarav Iyer,QA Engineer,Offer,Referral,Nadia Rahman,Mumbai,9,39.5,2026-06-23,
+CAND-2337,Neha Gupta,Data Analyst,Offer,LinkedIn,Nadia Rahman,Hyderabad,14,8.5,2026-06-27,7.0
+CAND-2338,Rohan Nair,Backend Engineer,Onsite,Careers Page,Priyanka Das,Remote,12,65.0,2026-04-24,9.0
+CAND-2339,Kabir Nair,Frontend Engineer,Hired,Campus,Priyanka Das,Bengaluru,9,11.3,2026-04-01,5.0
+CAND-2340,Kabir Shah,Frontend Engineer,Offer,Campus,Joel Fernandes,Remote,8,63.8,2026-06-24,7.0
+CAND-2341,Neha Reddy,Data Analyst,Tech Round,LinkedIn,Joel Fernandes,Remote,0,59.9,2026-04-04,
+CAND-2342,Sara Nair,Backend Engineer,Hired,LinkedIn,Joel Fernandes,Hyderabad,12,37.7,2026-03-20,9.0
+CAND-2343,Aarav Reddy,Product Manager,Hired,Referral,Joel Fernandes,Hyderabad,11,28.8,2026-03-03,
+CAND-2344,Sara Iyer,Frontend Engineer,Onsite,Referral,Nadia Rahman,Bengaluru,8,46.2,2026-05-31,6.0
+CAND-2345,Isha Bose,Data Analyst,Rejected,LinkedIn,Nadia Rahman,Hyderabad,11,8.2,2026-07-05,6.0
+CAND-2346,Aarav Gupta,Product Manager,Applied,Careers Page,Priyanka Das,Hyderabad,5,38.6,2026-07-23,5.0
+CAND-2347,Isha Bose,Frontend Engineer,Hired,Referral,Nadia Rahman,Remote,7,58.0,2026-05-10,6.0
+CAND-2348,Aarav Reddy,QA Engineer,Offer,Careers Page,Priyanka Das,Hyderabad,0,61.3,2026-03-14,7.0
+CAND-2349,Om Shah,Data Analyst,Applied,Campus,Joel Fernandes,Hyderabad,11,36.5,2026-03-12,6.0
+CAND-2350,Aarav Iyer,Product Manager,Offer,Agency,Joel Fernandes,Bengaluru,12,17.5,2026-03-21,
+CAND-2351,Neha Reddy,Product Manager,Applied,LinkedIn,Nadia Rahman,Mumbai,10,24.3,2026-03-25,
+CAND-2352,Sara Shah,Backend Engineer,Offer,Careers Page,Joel Fernandes,Mumbai,3,33.9,2026-05-27,
+CAND-2353,Tara Bose,Frontend Engineer,Applied,Campus,Priyanka Das,Hyderabad,3,42.9,2026-07-27,
+CAND-2354,Isha Nair,Backend Engineer,Onsite,Careers Page,Priyanka Das,Bengaluru,4,9.7,2026-06-22,
+CAND-2355,Kabir Bose,Product Manager,Applied,Referral,Priyanka Das,Bengaluru,1,23.4,2026-06-06,8.0
+CAND-2356,Isha Bose,Product Manager,Screening,Campus,Priyanka Das,Bengaluru,14,28.7,2026-06-18,
+CAND-2357,Tara Reddy,Backend Engineer,Onsite,Campus,Joel Fernandes,Mumbai,3,12.1,2026-03-18,6.0
+CAND-2358,Rohan Reddy,QA Engineer,Tech Round,Careers Page,Joel Fernandes,Hyderabad,14,17.0,2026-04-05,
+CAND-2359,Aarav Gupta,Data Analyst,Offer,Agency,Priyanka Das,Remote,9,40.4,2026-07-17,5.0
+CAND-2360,Rohan Shah,Data Analyst,Offer,Careers Page,Joel Fernandes,Remote,0,36.5,2026-04-07,
+CAND-2361,Neha Bose,QA Engineer,Rejected,Referral,Joel Fernandes,Remote,6,63.6,2026-04-21,
+CAND-2362,Tara Gupta,Product Manager,Hired,Agency,Priyanka Das,Remote,10,42.4,2026-06-16,7.0
+CAND-2363,Rohan Nair,Product Manager,Rejected,Referral,Joel Fernandes,Mumbai,0,43.7,2026-04-28,8.0
+CAND-2364,Neha Gupta,Product Manager,Hired,Careers Page,Priyanka Das,Hyderabad,6,29.6,2026-03-02,7.0
+CAND-2365,Aarav Nair,Data Analyst,Applied,Campus,Nadia Rahman,Mumbai,9,32.0,2026-07-28,7.0
+CAND-2366,Aarav Nair,Frontend Engineer,Screening,Careers Page,Nadia Rahman,Mumbai,8,48.4,2026-05-26,9.0
+CAND-2367,Neha Gupta,Frontend Engineer,Applied,LinkedIn,Joel Fernandes,Bengaluru,0,55.1,2026-04-05,8.0
+CAND-2368,Isha Iyer,Frontend Engineer,Tech Round,Agency,Nadia Rahman,Remote,11,45.0,2026-07-13,8.0
+CAND-2369,Isha Nair,Frontend Engineer,Screening,LinkedIn,Nadia Rahman,Hyderabad,11,24.8,2026-06-18,6.0
+CAND-2370,Aarav Bose,QA Engineer,Screening,Campus,Joel Fernandes,Mumbai,10,20.6,2026-05-11,5.0
+CAND-2371,Sara Gupta,Backend Engineer,Rejected,Agency,Priyanka Das,Bengaluru,5,36.0,2026-07-09,7.0
+CAND-2372,Sara Bose,Product Manager,Screening,Careers Page,Priyanka Das,Remote,15,48.2,2026-07-05,8.0
+CAND-2373,Kabir Bose,Product Manager,Hired,Campus,Priyanka Das,Bengaluru,6,19.0,2026-04-21,8.0
+CAND-2374,Neha Shah,Frontend Engineer,Tech Round,Agency,Joel Fernandes,Mumbai,11,21.0,2026-03-22,5.0
+CAND-2375,Isha Iyer,Product Manager,Offer,Careers Page,Nadia Rahman,Bengaluru,14,36.2,2026-05-26,8.0
+CAND-2376,Sara Shah,Product Manager,Onsite,Careers Page,Joel Fernandes,Remote,8,28.6,2026-04-15,8.0
+CAND-2377,Neha Iyer,Backend Engineer,Tech Round,Referral,Joel Fernandes,Bengaluru,8,60.7,2026-03-26,
+CAND-2378,Isha Iyer,Backend Engineer,Offer,LinkedIn,Joel Fernandes,Mumbai,10,20.8,2026-05-10,6.0
+CAND-2379,Rohan Reddy,QA Engineer,Tech Round,Referral,Joel Fernandes,Remote,11,52.2,2026-06-12,8.0
+CAND-2380,Aarav Shah,QA Engineer,Rejected,LinkedIn,Joel Fernandes,Mumbai,7,48.7,2026-04-23,8.0
+CAND-2381,Neha Bose,QA Engineer,Rejected,Campus,Joel Fernandes,Hyderabad,10,52.7,2026-05-20,6.0
+CAND-2382,Om Reddy,Product Manager,Screening,Agency,Joel Fernandes,Bengaluru,11,14.2,2026-04-02,7.0
+CAND-2383,Aarav Shah,Data Analyst,Tech Round,LinkedIn,Joel Fernandes,Hyderabad,12,51.0,2026-07-16,7.0
+CAND-2384,Tara Bose,Backend Engineer,Offer,Referral,Nadia Rahman,Mumbai,10,39.5,2026-07-25,8.0
+CAND-2385,Om Gupta,Product Manager,Applied,Campus,Joel Fernandes,Mumbai,15,12.4,2026-07-24,8.0
+CAND-2386,Kabir Nair,Frontend Engineer,Applied,Campus,Nadia Rahman,Bengaluru,15,7.6,2026-04-20,
+CAND-2387,Om Iyer,Frontend Engineer,Screening,Careers Page,Priyanka Das,Bengaluru,14,9.4,2026-07-11,
+CAND-2388,Rohan Iyer,Product Manager,Onsite,LinkedIn,Nadia Rahman,Mumbai,13,34.2,2026-03-18,8.0
+CAND-2389,Neha Gupta,Frontend Engineer,Tech Round,Agency,Priyanka Das,Hyderabad,5,41.6,2026-05-19,6.0
+CAND-2390,Sara Iyer,Frontend Engineer,Applied,LinkedIn,Joel Fernandes,Bengaluru,12,41.7,2026-05-03,9.0

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, misconfigured } from './api'
+import { api, misconfigurationReason, needsApiBase, setApiBase, apiBase } from './api'
 import UploadStep from './UploadStep'
 import DatasetLibrary from './DatasetLibrary'
 import SchemaStep from './SchemaStep'
@@ -13,6 +13,31 @@ export default function App() {
   const [dataset, setDataset] = useState(null)   // { datasetId, name, counts, schema }
   const [health, setHealth] = useState(null)
   const [opening, setOpening] = useState(null)
+  const [needsBase, setNeedsBase] = useState(needsApiBase())
+  const [baseInput, setBaseInput] = useState('')
+  const [baseError, setBaseError] = useState(null)
+  const [checking, setChecking] = useState(false)
+
+  async function applyApiBase() {
+    const value = baseInput.trim()
+    if (!value) return
+    setChecking(true)
+    setBaseError(null)
+    const previous = apiBase()
+    setApiBase(value)
+    try {
+      // Prove the address before accepting it, so a typo is caught here
+      // rather than surfacing as a confusing failure three screens later.
+      const result = await api.health()
+      setHealth(result)
+      setNeedsBase(false)
+    } catch (err) {
+      setApiBase(previous)
+      setBaseError(err.message)
+    } finally {
+      setChecking(false)
+    }
+  }
 
   async function openDataset(id) {
     setOpening(id)
@@ -28,24 +53,61 @@ export default function App() {
   }
 
   useEffect(() => {
-    if (misconfigured) return
+    if (needsBase) return
     api.health().then(setHealth).catch(() => setHealth({ status: 'error' }))
-  }, [])
+  }, [needsBase])
 
-  if (misconfigured) {
+  if (needsBase) {
     return (
       <div className="app">
         <header className="topbar">
           <div className="brand">Sheet<span>Graph</span></div>
+          <div className="tagline">connect to your API</div>
         </header>
         <div className="stage">
-          <div className="center-wrap">
-            <div className="error-banner">
-              <b>This build has no API address.</b>
-              <p style={{ margin: '8px 0 0' }}>
-                Set the project environment variable <code>API_URL</code> to the api
-                service's public subdomain, then redeploy the <code>web</code> service.
-                Until then the frontend has nothing to talk to.
+          <div className="center-wrap" style={{ maxWidth: 620 }}>
+            <h1>Where is your API?</h1>
+            <p className="sub">
+              This build has no API address compiled into it, so it does not know
+              where to send requests.
+            </p>
+
+            <div className="warnings">
+              {misconfigurationReason}
+            </div>
+
+            <div className="card">
+              <h2>Enter it now</h2>
+              <p className="sub" style={{ marginBottom: 12 }}>
+                Paste the api service's public subdomain. It is checked before being
+                accepted, and remembered for this browser tab — no rebuild needed.
+              </p>
+              <div className="row">
+                <input
+                  value={baseInput}
+                  onChange={(e) => setBaseInput(e.target.value)}
+                  placeholder="https://api-1a2b-8000.prg1.zerops.app"
+                  disabled={checking}
+                  onKeyDown={(e) => { if (e.key === 'Enter') applyApiBase() }}
+                />
+                <button className="primary" onClick={applyApiBase} disabled={checking || !baseInput.trim()}>
+                  {checking ? <span className="spinner" /> : 'Connect'}
+                </button>
+              </div>
+              {baseError && (
+                <div className="error-banner" style={{ marginTop: 12, marginBottom: 0 }}>
+                  {baseError}
+                </div>
+              )}
+            </div>
+
+            <div className="card">
+              <h2>Or fix it permanently</h2>
+              <p className="sub" style={{ margin: 0 }}>
+                Set the project environment variable <code>API_URL</code> to that same
+                subdomain, then <b>rebuild</b> the <code>web</code> service. The value is
+                compiled into the bundle at build time, so setting it without rebuilding
+                changes nothing.
               </p>
             </div>
           </div>
