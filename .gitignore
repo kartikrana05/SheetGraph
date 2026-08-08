@@ -7,6 +7,9 @@
 !.env.example
 .mcp.json
 
+# Import YAML carrying real credentials for a one-command deploy.
+zerops-import-live.yaml
+
 # Python
 __pycache__/
 *.py[cod]

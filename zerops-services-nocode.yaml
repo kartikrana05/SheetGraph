@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://api.app-prg1.zerops.io/api/rest/public/settings/import-project-yml-json-schema.json
+#
+# SERVICES-ONLY, NO BUILD AT IMPORT.
+#
+#   zcli project service-import zerops-services-nocode.yaml
+#   zcli service push api --setup api
+#   zcli service push web --setup web
+#
+# Why no `buildFromGit`: every import so far has failed the same way — the
+# first service creates, its build fails, and the whole import aborts, taking
+# the remaining services with it. The build is the root cause and the only
+# error that matters, but an import-time build writes its log into the GUI
+# where zcli cannot show it.
+#
+# `startWithoutCode: true` creates the containers with nothing deployed, so
+# the import cannot fail on a build. `zcli service push` then builds from
+# local code and streams the log to your terminal — which is both a way past
+# the problem and a way to finally see what it is.
+#
+# It also sidesteps a second issue: buildFromGit clones the repository's
+# DEFAULT branch, which on this repo is still `master` and several commits
+# behind `main`. Pushing from local always deploys what you actually have.
+#
+# Credentials go at PROJECT level (GUI → project → Environment variables →
+# paste zerops-aura.env). Project variables are inherited by every service,
+# which is what zerops.yaml expects.
+
+services:
+  - hostname: api
+    type: python@3.12
+    priority: 5
+    startWithoutCode: true
+    enableSubdomainAccess: true
+    minContainers: 1
+    maxContainers: 1
+    verticalAutoscaling:
+      minRam: 0.5
+      maxRam: 2
+
+  - hostname: web
+    type: static
+    priority: 1
+    startWithoutCode: true
+    enableSubdomainAccess: true
+    verticalAutoscaling:
+      minRam: 0.25
+      maxRam: 1
