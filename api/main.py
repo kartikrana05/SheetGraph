@@ -154,6 +154,46 @@ def health():
     }
 
 
+@app.get("/api/llm-check")
+def llm_check():
+    """
+    Prove the language model actually works.
+
+    /api/health only reports whether GROQ_API_KEY is present, which says
+    nothing about whether calls succeed — a retired model name passes that
+    check and fails every real request.
+    """
+    import llm
+
+    result: dict = {
+        "configuredModel": llm.MODEL,
+        "keyPresent": bool(os.getenv("GROQ_API_KEY")),
+    }
+
+    try:
+        models = llm.available_models()
+        result["availableModels"] = models[:20]
+        result["configuredModelAvailable"] = llm.MODEL in models
+    except Exception as exc:
+        result["availableModels"] = []
+        result["modelListError"] = f"{type(exc).__name__}: {exc}"
+
+    result["resolvedModel"] = llm.resolve_model()
+
+    started = time.time()
+    try:
+        reply = llm.complete("Reply with the single word: ok", "ping",
+                             temperature=0, max_tokens=5)
+        result["testCall"] = "ok"
+        result["reply"] = reply[:80]
+    except Exception as exc:
+        result["testCall"] = "failed"
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    result["tookMs"] = round((time.time() - started) * 1000)
+
+    return result
+
+
 # ─────────────────────────────────────────────
 # Step 1 — upload and profile
 # ─────────────────────────────────────────────
@@ -260,7 +300,11 @@ def propose(req: ProposeRequest):
     try:
         schema, warnings = schema_infer.propose_schema(entry["profiles"], req.hint)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Schema inference failed: {exc}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Schema inference failed ({type(exc).__name__}): {exc}",
+        )
     return {"schema": schema, "warnings": warnings}
 
 
@@ -272,7 +316,11 @@ def refine(req: RefineRequest):
             entry["profiles"], req.schema_, req.instruction
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not apply that change: {exc}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not apply that change ({type(exc).__name__}): {exc}",
+        )
     return {"schema": schema, "warnings": warnings}
 
 
@@ -328,6 +376,7 @@ def datasets():
     try:
         return {"datasets": graphdb.list_datasets()}
     except Exception as exc:
+        traceback.print_exc()
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}")
 
 
@@ -369,16 +418,27 @@ def dataset_stats(dataset_id: str):
     return graphdb.stats(dataset_id)
 
 
+_suggestion_cache: dict[str, list[str]] = {}
+
+
 @app.get("/api/datasets/{dataset_id}/suggestions")
 def dataset_suggestions(dataset_id: str):
+    # Cached per dataset: the schema does not change, so regenerating these on
+    # every visit spends the token allowance before the user asks anything.
+    if dataset_id in _suggestion_cache:
+        return {"suggestions": _suggestion_cache[dataset_id], "cached": True}
+
     found = graphdb.get_dataset(dataset_id)
     if not found:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    return {
-        "suggestions": query.suggest_questions(
-            found["schema"], found.get("name") or "this dataset"
-        )
-    }
+
+    suggestions = query.suggest_questions(
+        found["schema"], found.get("name") or "this dataset"
+    )
+    if len(_suggestion_cache) > 50:
+        _suggestion_cache.clear()
+    _suggestion_cache[dataset_id] = suggestions
+    return {"suggestions": suggestions}
 
 
 @app.post("/api/expand")

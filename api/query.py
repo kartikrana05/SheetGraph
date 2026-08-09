@@ -12,7 +12,7 @@ import json
 import re
 
 import graphdb
-from llm import complete, complete_json
+from llm import complete, complete_json, resolve_fast_model
 
 # Word-boundary matched so a property called "createdAt" or "assetId" does not
 # trip the "create"/"set" filters.
@@ -162,11 +162,13 @@ def ask(dataset_id: str, message: str, history: list[dict] | None = None) -> dic
     try:
         parsed = complete_json(system, user_prompt, temperature=0.1, max_tokens=1024)
     except Exception as exc:
+        import traceback
+        traceback.print_exc()
         return {
-            "answer": "I could not turn that into a query. Try rephrasing it.",
+            "answer": f"I could not turn that into a query. {exc}",
             "cypher": None,
             "rows": [],
-            "error": str(exc),
+            "error": f"{type(exc).__name__}: {exc}",
         }
 
     cypher = parsed.get("cypher")
@@ -228,6 +230,7 @@ def ask(dataset_id: str, message: str, history: list[dict] | None = None) -> dic
         f"Write 2-4 sentences answering the question. Cite specific names and numbers.",
         temperature=0.3,
         max_tokens=300,
+        model=resolve_fast_model(),
     )
 
     return {

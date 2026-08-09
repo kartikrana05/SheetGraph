@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://api.app-prg1.zerops.io/api/rest/public/settings/import-project-yml-json-schema.json
+#
+# SERVICES-ONLY IMPORT — adds api and web to a project that already exists.
+#
+#   zcli project service-import zerops-services-live.yaml
+#
+# Why this exists: creating a NEW project has failed twice, in both cases after
+# exactly one service was created. Since `zcli scope project` offers no picker
+# and lands on `zcp`, that is the only project on the account — so the
+# `sheetgraph` project is not being created at all, and the service errors are
+# a symptom rather than the cause.
+#
+# This file deliberately has no `project:` block, so nothing new is created. It
+# adds the two services to a project you already have.
+#
+# There are no credentials here: set them once at the PROJECT level (GUI →
+# project → Environment variables → paste zerops-aura.env). Project variables
+# are inherited by every service, which is also what zerops.yaml expects —
+# setting the same names per-service would shadow them instead.
+
+services:
+  - hostname: api
+    type: python@3.12
+    priority: 5
+    buildFromGit: https://github.com/kartikrana05/SheetGraph
+    enableSubdomainAccess: true
+    minContainers: 1
+    maxContainers: 1
+    verticalAutoscaling:
+      minRam: 0.5
+      maxRam: 2
+
+  - hostname: web
+    type: static
+    priority: 1
+    buildFromGit: https://github.com/kartikrana05/SheetGraph
+    enableSubdomainAccess: true
+    verticalAutoscaling:
+      minRam: 0.25
+      maxRam: 1

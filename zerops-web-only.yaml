@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://api.app-prg1.zerops.io/api/rest/public/settings/import-project-yml-json-schema.json
+#
+# Creates ONLY the web service.
+#
+#   zcli project service-import zerops-web-only.yaml
+#
+# The `api` service already exists from an earlier import — re-importing it
+# fails with serviceStackNameUnavailable. `web` never got created, because
+# every import aborted at the first build failure before reaching it.
+
+services:
+  - hostname: web
+    type: static
+    priority: 1
+    startWithoutCode: true
+    enableSubdomainAccess: true
+    verticalAutoscaling:
+      minRam: 0.25
+      maxRam: 1

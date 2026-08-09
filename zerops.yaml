@@ -29,14 +29,17 @@ zerops:
         - sudo mkdir -p /var/lib/neo4j/data /var/lib/neo4j/logs
         - sudo chown -R zerops:zerops /var/lib/neo4j
       envVariables:
-        NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-      # Env vars must be passed into the container explicitly — the VM's
-      # environment is not inherited by `docker run`.
+        # Composed from the project-level NEO4J_PASSWORD into a DIFFERENT name.
+        # `NEO4J_PASSWORD: ${NEO4J_PASSWORD}` would be a self-reference, which
+        # shadows the project variable rather than reading it.
+        NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      # The VM inherits project variables, but `docker run` does not inherit
+      # the VM's environment — each one must be passed through explicitly.
       start: >-
         docker run --rm --network=host
         -v /var/lib/neo4j/data:/data
         -v /var/lib/neo4j/logs:/logs
-        -e NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+        -e NEO4J_AUTH
         -e NEO4J_server_memory_heap_initial__size=512m
         -e NEO4J_server_memory_heap_max__size=1G
         -e NEO4J_server_memory_pagecache_size=512m
@@ -50,11 +53,16 @@ zerops:
         httpGet:
           port: 7474
           path: /
+        # These are Go durations and MUST carry a unit. A bare `240` fails
+        # YAML validation with "cannot unmarshal !!int into time.Duration",
+        # which rejects the whole file before the build starts — and the
+        # error surfaces as a generic stack.build failure.
+        #
         # A Docker service is a full VM: kernel boot plus Neo4j start-up is
         # slow, so this is deliberately patient. A tight timeout here makes
         # the service flap on every restart.
-        failureTimeout: 240
-        execPeriod: 15
+        failureTimeout: 240s
+        execPeriod: 15s
 
   # ───────────────────────────────────────────────────────────
   # FastAPI backend — Python runtime
@@ -76,34 +84,35 @@ zerops:
         httpGet:
           port: 8000
           path: /api/health
-        failureTimeout: 60
-        retryPeriod: 5
+        failureTimeout: 60s
+        # Minimum accepted is 10s — Zerops rejects anything lower with
+        # "invalid retryPeriod <10s, 1h0m0s>".
+        retryPeriod: 10s
     run:
       base: python@3.12
       ports:
         - port: 8000
           httpSupport: true
       envVariables:
-        PYTHONPATH: /var/www/vendor
-        # All four come from project-level variables, so pointing the API at a
-        # different Neo4j (the in-project Docker service, or a managed Aura
-        # instance as a fallback) is a config change plus a redeploy — no code
-        # edit. Defaults are set in zerops-project-import.yaml.
+        # Only genuinely service-local values belong here.
         #
-        # In-project:  bolt://graph:7687   (private network, no TLS — https://
-        #                                   between services would fail)
-        # Aura:        neo4j+s://<id>.databases.neo4j.io
-        NEO4J_URI: ${NEO4J_URI}
-        NEO4J_USER: ${NEO4J_USER}
-        NEO4J_PASSWORD: ${NEO4J_PASSWORD}
-        NEO4J_DATABASE: ${NEO4J_DATABASE}
-        GROQ_API_KEY: ${GROQ_API_KEY}
+        # NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_DATABASE and GROQ_API_KEY
+        # are NOT listed: project-level variables are inherited by every service
+        # automatically, in both build and runtime. Re-declaring one as
+        # `NEO4J_URI: ${NEO4J_URI}` would be a self-reference that shadows the
+        # project value instead of reading it.
+        #
+        # That inheritance is what makes the database swappable: point
+        # NEO4J_URI at bolt://graph:7687 for the in-project service, or at
+        # neo4j+s://<id>.databases.neo4j.io for a managed Aura instance, and
+        # redeploy. No code or zerops.yaml change either way.
+        PYTHONPATH: /var/www/vendor
       healthCheck:
         httpGet:
           port: 8000
           path: /api/health
-        failureTimeout: 90
-        execPeriod: 15
+        failureTimeout: 90s
+        execPeriod: 15s
       start: /var/www/vendor/bin/uvicorn main:app --host 0.0.0.0 --port 8000
 
   # ───────────────────────────────────────────────────────────

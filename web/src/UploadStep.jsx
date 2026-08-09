@@ -1,6 +1,44 @@
 import { useRef, useState } from 'react'
 import { api } from './api'
 
+// Bundled with the frontend (web/public/samples), so a first-time visitor can
+// see the whole flow without having a spreadsheet to hand — which is most of
+// them. Fetched from this origin, wrapped in a File, then sent through exactly
+// the same upload path as a real drop.
+const SAMPLES = [
+  {
+    file: 'sales_orders.xlsx',
+    name: 'Sales orders',
+    detail: '3 tabs · 130 rows',
+    blurb: 'Orders with a product master and a region master. Product Code and Region Code appear in two tabs each and become single joined nodes.',
+    featured: true,
+  },
+  {
+    file: 'fmcg_operations.xlsx',
+    name: 'FMCG field operations',
+    detail: '4 tabs · 165 rows',
+    blurb: 'Sales plus distributor, product and team masters — including two columns whose names differ but hold the same values.',
+  },
+  {
+    file: 'pm_tracker.xlsx',
+    name: 'Project tracker',
+    detail: '1 sheet · 180 rows',
+    blurb: 'Projects with owners, departments, status and budgets.',
+  },
+  {
+    file: 'support_tickets.xlsx',
+    name: 'Support tickets',
+    detail: '1 sheet · 260 rows',
+    blurb: 'Tickets by customer, assignee, component and severity.',
+  },
+  {
+    file: 'hiring_pipeline.csv',
+    name: 'Hiring pipeline',
+    detail: 'CSV · 190 rows',
+    blurb: 'Candidates by role, stage, source and recruiter.',
+  },
+]
+
 const TYPE_HELP = {
   identifier: 'unique per row — usually the entity key',
   measure: 'numeric — stays a property',
@@ -63,7 +101,33 @@ export default function UploadStep({ onProfiled }) {
   const [uploadId, setUploadId] = useState(null)
   const [hint, setHint] = useState('')
   const [expanded, setExpanded] = useState({})
+  const [loadingSample, setLoadingSample] = useState(null)
   const inputRef = useRef(null)
+
+  async function loadSample(sample) {
+    setBusy(true)
+    setError(null)
+    setLoadingSample(sample.file)
+    try {
+      const response = await fetch(`/samples/${sample.file}`)
+      if (!response.ok) {
+        throw new Error(`Could not load the sample (${response.status})`)
+      }
+      const blob = await response.blob()
+      // Wrapped as a File so it goes through the identical upload path — the
+      // sample is not a special case anywhere downstream.
+      const file = new File([blob], sample.file, { type: blob.type })
+      const result = await api.upload([file])
+      setUploadId(result.uploadId)
+      setProfiles(result.profiles)
+      setRejected(result.rejected || [])
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+      setLoadingSample(null)
+    }
+  }
 
   async function handleFiles(fileList) {
     const files = Array.from(fileList || [])
@@ -185,6 +249,31 @@ export default function UploadStep({ onProfiled }) {
             style={{ display: 'none' }}
             onChange={(e) => handleFiles(e.target.files)}
           />
+        </div>
+
+        <div className="sample-divider"><span>or try one of these</span></div>
+
+        <div className="sample-grid">
+          {SAMPLES.map((sample) => (
+            <button
+              key={sample.file}
+              className={`sample-card ${sample.featured ? 'featured' : ''}`}
+              disabled={busy}
+              onClick={() => loadSample(sample)}
+            >
+              <div className="sample-head">
+                <b>{sample.name}</b>
+                {sample.featured && <span className="sample-badge">best demo</span>}
+              </div>
+              <div className="sample-detail">{sample.detail}</div>
+              <p className="sample-blurb">{sample.blurb}</p>
+              <span className="sample-cta">
+                {loadingSample === sample.file
+                  ? <><span className="spinner" /> Loading…</>
+                  : 'Load this →'}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
     )

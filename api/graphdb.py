@@ -376,10 +376,11 @@ def list_datasets() -> list[dict]:
             """
             MATCH (d:_Dataset)
             OPTIONAL MATCH (e:_Endpoint {datasetId: d.id})
+            WITH d, count(e) AS endpointCount
             RETURN d.id AS id, d.name AS name, d.sheetCount AS sheetCount,
                    d.rowCount AS rowCount, d.nodeCount AS nodeCount,
                    d.relCount AS relCount, d.sheets AS sheets,
-                   count(e) AS endpointCount,
+                   endpointCount,
                    toString(d.createdAt) AS createdAt
             ORDER BY d.createdAt DESC
             """
