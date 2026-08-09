@@ -73,7 +73,19 @@ def complete(
             ) from exc
         raise RuntimeError(f"Language model call failed ({name}): {text[:300]}") from exc
 
-    return (response.choices[0].message.content or "").strip()
+    choice = response.choices[0]
+    text = (choice.message.content or "").strip()
+
+    # A response cut off at the token ceiling is invalid JSON in a way that is
+    # indistinguishable from the model simply misbehaving. Say which it was.
+    if getattr(choice, "finish_reason", None) == "length":
+        raise RuntimeError(
+            f"The model hit the {max_tokens}-token output limit before finishing. "
+            "The schema was too large to express in one response — try fewer "
+            "sheets, or fewer columns per sheet."
+        )
+
+    return text
 
 
 def _balanced_json(text: str) -> str | None:

@@ -9,8 +9,8 @@ const SAMPLES = [
   {
     file: 'fmcg_operations.xlsx',
     name: 'FMCG field operations',
-    detail: '4 tabs · 501 rows',
-    blurb: 'Sales plus distributor, product and team masters. Three entities appear in more than one tab and get joined into single nodes.',
+    detail: '4 tabs · 165 rows',
+    blurb: 'Sales plus distributor, product and team masters. Three entities appear in more than one tab — including two whose column names differ — and get joined into single nodes.',
     featured: true,
   },
   {

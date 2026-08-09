@@ -37,7 +37,7 @@ Return ONLY a JSON object, no prose, no markdown.
 OUTPUT FORMAT:
 {
   "datasetName": "Short human name for this whole dataset",
-  "summary": "3-4 sentences: what these tables track, how you modelled them, and which entities you joined across tables",
+  "summary": "2 sentences: what these tables track and which entities you joined across them",
   "nodes": [
     {
       "label": "Product",
@@ -54,7 +54,7 @@ OUTPUT FORMAT:
           "properties": [{"name": "brand", "column": "Brand"}]
         }
       ],
-      "reason": "Why this is its own node, and why these columns are the same entity"
+      "reason": "One short clause. Omit entirely if obvious."
     }
   ],
   "relationships": [
@@ -63,7 +63,7 @@ OUTPUT FORMAT:
       "from": "Invoice",
       "to": "Product",
       "sheet": "sales",
-      "reason": "Each row of the sales sheet links an invoice to a product"
+      "reason": ""
     }
   ]
 }
@@ -103,6 +103,9 @@ NAMING AND VALIDITY:
 12. A relationship's "sheet" must be a sheet where BOTH endpoint nodes have a source —
     that is what makes the two ends joinable row by row.
 13. Aim for 4 to 9 node labels overall. Fewer is a boring graph; more is noise.
+14. Keep prose to a minimum. "reason" is one short clause or an empty string, and
+    "summary" is two sentences. The JSON must be COMPLETE — a response cut off
+    mid-object is unusable, so favour brevity over explanation.
 """
 
 REFINE_PROMPT = """\
@@ -369,7 +372,7 @@ def propose_schema(profiles: list[dict], hint: str | None = None) -> tuple[dict,
     if hint:
         user += f"\n\nThe user wants to analyse this — weight it heavily:\n{hint}"
 
-    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=2200)
+    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=4000)
     return validate_schema(raw, profiles)
 
 
@@ -380,5 +383,5 @@ def refine_schema(profiles: list[dict], schema: dict, instruction: str) -> tuple
         f"CURRENT SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
         f"USER INSTRUCTION:\n{instruction}"
     )
-    raw = complete_json(REFINE_PROMPT, user, temperature=0.1, max_tokens=3000)
+    raw = complete_json(REFINE_PROMPT, user, temperature=0.1, max_tokens=4000)
     return validate_schema(raw, profiles)
