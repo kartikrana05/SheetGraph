@@ -260,7 +260,11 @@ def propose(req: ProposeRequest):
     try:
         schema, warnings = schema_infer.propose_schema(entry["profiles"], req.hint)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Schema inference failed: {exc}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Schema inference failed ({type(exc).__name__}): {exc}",
+        )
     return {"schema": schema, "warnings": warnings}
 
 
@@ -272,7 +276,11 @@ def refine(req: RefineRequest):
             entry["profiles"], req.schema_, req.instruction
         )
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Could not apply that change: {exc}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not apply that change ({type(exc).__name__}): {exc}",
+        )
     return {"schema": schema, "warnings": warnings}
 
 
@@ -328,6 +336,7 @@ def datasets():
     try:
         return {"datasets": graphdb.list_datasets()}
     except Exception as exc:
+        traceback.print_exc()
         raise HTTPException(status_code=503, detail=f"Database unavailable: {exc}")
 
 
