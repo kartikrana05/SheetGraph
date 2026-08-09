@@ -15,6 +15,20 @@ from groq import Groq
 
 MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 
+# Providers retire models without warning, and a retired name fails fast with a
+# 404 that looks like any other error. These are tried in order if the
+# configured model is not in the account's list.
+FALLBACK_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+]
+
+_resolved_model: str | None = None
+
 _client: Groq | None = None
 
 
@@ -39,6 +53,63 @@ def client() -> Groq:
     return _client
 
 
+def available_models() -> list[str]:
+    """Model ids this API key can actually use, newest listing first."""
+    try:
+        listing = client().models.list()
+    except Exception as exc:
+        raise RuntimeError(f"Could not list models ({type(exc).__name__}): {exc}") from exc
+
+    ids = []
+    for item in getattr(listing, "data", []) or []:
+        model_id = getattr(item, "id", None)
+        if model_id:
+            ids.append(model_id)
+    return ids
+
+
+def resolve_model() -> str:
+    """
+    The model to actually call.
+
+    Checks the configured name against what the account can serve, because a
+    decommissioned model produces a fast 404 that is indistinguishable from a
+    dozen other failures. Resolved once and cached.
+    """
+    global _resolved_model
+    if _resolved_model:
+        return _resolved_model
+
+    try:
+        ids = available_models()
+    except Exception:
+        # If even the listing fails, use the configured name and let the call
+        # itself produce the real error.
+        _resolved_model = MODEL
+        return _resolved_model
+
+    if MODEL in ids:
+        _resolved_model = MODEL
+        return _resolved_model
+
+    for candidate in FALLBACK_MODELS:
+        if candidate in ids:
+            print(f"[llm] configured model {MODEL!r} unavailable; using {candidate!r}")
+            _resolved_model = candidate
+            return _resolved_model
+
+    # Any chat-capable model beats none. Whisper and guard models are not.
+    for model_id in ids:
+        low = model_id.lower()
+        if not any(skip in low for skip in ("whisper", "guard", "tts", "embed")):
+            print(f"[llm] falling back to first usable model {model_id!r}")
+            _resolved_model = model_id
+            return _resolved_model
+
+    _resolved_model = MODEL
+    return _resolved_model
+
+
 def complete(
     system: str,
     user: str,
@@ -47,7 +118,7 @@ def complete(
 ) -> str:
     try:
         response = client().chat.completions.create(
-            model=MODEL,
+            model=resolve_model(),
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -66,6 +137,11 @@ def complete(
                 "and try again, or upload fewer sheets at once — a larger prompt "
                 "consumes more of the per-minute allowance."
             ) from exc
+        if "model" in text.lower() and ("not found" in text.lower() or "decommission" in text.lower()):
+            raise RuntimeError(
+                f"The model '{resolve_model()}' is not available on this API key. "
+                f"Set LLM_MODEL to one of: {', '.join(available_models()[:8])}"
+            ) from exc
         if name in {"APITimeoutError", "APIConnectionError"} or "timeout" in text.lower():
             raise RuntimeError(
                 f"The language model did not respond within {REQUEST_TIMEOUT:.0f}s. "
@@ -78,7 +154,7 @@ def complete(
 
     # A response cut off at the token ceiling is invalid JSON in a way that is
     # indistinguishable from the model simply misbehaving. Say which it was.
-    if getattr(choice, "finish_reason", None) == "length":
+    if getattr(choice, "finish_reason", None) == "length":  # noqa: E501
         raise RuntimeError(
             f"The model hit the {max_tokens}-token output limit before finishing. "
             "The schema was too large to express in one response — try fewer "

@@ -154,6 +154,46 @@ def health():
     }
 
 
+@app.get("/api/llm-check")
+def llm_check():
+    """
+    Prove the language model actually works.
+
+    /api/health only reports whether GROQ_API_KEY is present, which says
+    nothing about whether calls succeed — a retired model name passes that
+    check and fails every real request.
+    """
+    import llm
+
+    result: dict = {
+        "configuredModel": llm.MODEL,
+        "keyPresent": bool(os.getenv("GROQ_API_KEY")),
+    }
+
+    try:
+        models = llm.available_models()
+        result["availableModels"] = models[:20]
+        result["configuredModelAvailable"] = llm.MODEL in models
+    except Exception as exc:
+        result["availableModels"] = []
+        result["modelListError"] = f"{type(exc).__name__}: {exc}"
+
+    result["resolvedModel"] = llm.resolve_model()
+
+    started = time.time()
+    try:
+        reply = llm.complete("Reply with the single word: ok", "ping",
+                             temperature=0, max_tokens=5)
+        result["testCall"] = "ok"
+        result["reply"] = reply[:80]
+    except Exception as exc:
+        result["testCall"] = "failed"
+        result["error"] = f"{type(exc).__name__}: {exc}"
+    result["tookMs"] = round((time.time() - started) * 1000)
+
+    return result
+
+
 # ─────────────────────────────────────────────
 # Step 1 — upload and profile
 # ─────────────────────────────────────────────
