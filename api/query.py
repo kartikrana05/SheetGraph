@@ -12,7 +12,7 @@ import json
 import re
 
 import graphdb
-from llm import complete, complete_json
+from llm import complete, complete_json, resolve_fast_model
 
 # Word-boundary matched so a property called "createdAt" or "assetId" does not
 # trip the "create"/"set" filters.
@@ -230,6 +230,7 @@ def ask(dataset_id: str, message: str, history: list[dict] | None = None) -> dic
         f"Write 2-4 sentences answering the question. Cite specific names and numbers.",
         temperature=0.3,
         max_tokens=300,
+        model=resolve_fast_model(),
     )
 
     return {

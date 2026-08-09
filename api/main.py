@@ -418,16 +418,27 @@ def dataset_stats(dataset_id: str):
     return graphdb.stats(dataset_id)
 
 
+_suggestion_cache: dict[str, list[str]] = {}
+
+
 @app.get("/api/datasets/{dataset_id}/suggestions")
 def dataset_suggestions(dataset_id: str):
+    # Cached per dataset: the schema does not change, so regenerating these on
+    # every visit spends the token allowance before the user asks anything.
+    if dataset_id in _suggestion_cache:
+        return {"suggestions": _suggestion_cache[dataset_id], "cached": True}
+
     found = graphdb.get_dataset(dataset_id)
     if not found:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    return {
-        "suggestions": query.suggest_questions(
-            found["schema"], found.get("name") or "this dataset"
-        )
-    }
+
+    suggestions = query.suggest_questions(
+        found["schema"], found.get("name") or "this dataset"
+    )
+    if len(_suggestion_cache) > 50:
+        _suggestion_cache.clear()
+    _suggestion_cache[dataset_id] = suggestions
+    return {"suggestions": suggestions}
 
 
 @app.post("/api/expand")

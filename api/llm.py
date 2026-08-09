@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 
 from groq import Groq
 
@@ -27,7 +28,14 @@ FALLBACK_MODELS = [
     "gemma2-9b-it",
 ]
 
+# Cypher and schema generation need the capable model. Summarising rows and
+# writing starter questions do not — and using a smaller model for those halves
+# consumption of a per-minute token allowance that is shared across both.
+FAST_MODEL = os.getenv("LLM_FAST_MODEL", "llama-3.1-8b-instant")
+FAST_FALLBACKS = ["llama-3.1-8b-instant", "llama3-8b-8192", "gemma2-9b-it"]
+
 _resolved_model: str | None = None
+_resolved_fast_model: str | None = None
 
 _client: Groq | None = None
 
@@ -37,10 +45,13 @@ _client: Groq | None = None
 # surfaces to the browser as a dropped connection with no explanation, which
 # is worse than a clear failure.
 REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
-# Zero, not one: a retry doubles the worst case to ~90s, and the thing most
-# likely to be retried is a rate limit, whose backoff is exactly what stalls
-# the request. Better to fail at 45s with an explanation the user can act on.
-MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
+# The SDK's own retry is disabled — its exponential backoff is unbounded and
+# was stalling requests behind the load balancer. Rate limits are retried here
+# instead, with short fixed waits and a hard ceiling, because Groq's free-tier
+# allowance resets per minute and a few seconds usually clears it.
+MAX_RETRIES = 0
+RATE_LIMIT_RETRIES = int(os.getenv("LLM_RATE_LIMIT_RETRIES", "2"))
+RATE_LIMIT_BACKOFF = [3, 7]  # seconds; total added wait is bounded at 10s
 
 
 def client() -> Groq:
@@ -110,51 +121,69 @@ def resolve_model() -> str:
     return _resolved_model
 
 
+def _is_rate_limit(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return type(exc).__name__ == "RateLimitError" or "rate" in text or "429" in text
+
+
+def resolve_fast_model() -> str:
+    """A cheaper model for summarisation, falling back to the main one."""
+    global _resolved_fast_model
+    if _resolved_fast_model:
+        return _resolved_fast_model
+    try:
+        ids = available_models()
+    except Exception:
+        _resolved_fast_model = resolve_model()
+        return _resolved_fast_model
+
+    for candidate in [FAST_MODEL, *FAST_FALLBACKS]:
+        if candidate in ids:
+            _resolved_fast_model = candidate
+            return _resolved_fast_model
+
+    _resolved_fast_model = resolve_model()
+    return _resolved_fast_model
+
+
 def complete(
     system: str,
     user: str,
     temperature: float = 0.1,
     max_tokens: int = 2048,
+    model: str | None = None,
 ) -> str:
-    try:
-        response = client().chat.completions.create(
-            model=resolve_model(),
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
-    except Exception as exc:
-        # Translate the provider's failures into something a user can act on.
-        # Left raw, a rate limit and an outage read the same.
-        name = type(exc).__name__
-        text = str(exc)
-        if "rate" in text.lower() or "429" in text or name == "RateLimitError":
-            raise RuntimeError(
-                "The language model is rate limited right now. Wait a few seconds "
-                "and try again, or upload fewer sheets at once — a larger prompt "
-                "consumes more of the per-minute allowance."
-            ) from exc
-        if "model" in text.lower() and ("not found" in text.lower() or "decommission" in text.lower()):
-            raise RuntimeError(
-                f"The model '{resolve_model()}' is not available on this API key. "
-                f"Set LLM_MODEL to one of: {', '.join(available_models()[:8])}"
-            ) from exc
-        if name in {"APITimeoutError", "APIConnectionError"} or "timeout" in text.lower():
-            raise RuntimeError(
-                f"The language model did not respond within {REQUEST_TIMEOUT:.0f}s. "
-                "This usually means the prompt was large — try fewer sheets."
-            ) from exc
-        raise RuntimeError(f"Language model call failed ({name}): {text[:300]}") from exc
+    target = model or resolve_model()
+    attempt = 0
+
+    while True:
+        try:
+            response = client().chat.completions.create(
+                model=target,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            break
+        except Exception as exc:
+            # A rate limit is transient by definition — the allowance resets on
+            # a fixed window — so waiting briefly beats failing the request.
+            if _is_rate_limit(exc) and attempt < RATE_LIMIT_RETRIES:
+                wait = RATE_LIMIT_BACKOFF[min(attempt, len(RATE_LIMIT_BACKOFF) - 1)]
+                print(f"[llm] rate limited, retrying in {wait}s "
+                      f"(attempt {attempt + 1}/{RATE_LIMIT_RETRIES})")
+                time.sleep(wait)
+                attempt += 1
+                continue
+            return _raise_readable(exc, target)
 
     choice = response.choices[0]
     text = (choice.message.content or "").strip()
 
-    # A response cut off at the token ceiling is invalid JSON in a way that is
-    # indistinguishable from the model simply misbehaving. Say which it was.
-    if getattr(choice, "finish_reason", None) == "length":  # noqa: E501
+    if getattr(choice, "finish_reason", None) == "length":
         raise RuntimeError(
             f"The model hit the {max_tokens}-token output limit before finishing. "
             "The schema was too large to express in one response — try fewer "
@@ -162,6 +191,32 @@ def complete(
         )
 
     return text
+
+
+def _raise_readable(exc: Exception, target: str) -> str:
+    """Translate a provider failure into something a user can act on."""
+    name = type(exc).__name__
+    text = str(exc)
+
+    if _is_rate_limit(exc):
+        raise RuntimeError(
+            "The language model is rate limited and did not recover after "
+            f"{RATE_LIMIT_RETRIES} retries. Groq's free tier allows a fixed number "
+            "of tokens per minute — wait about a minute and try again."
+        ) from exc
+
+    if "model" in text.lower() and ("not found" in text.lower() or "decommission" in text.lower()):
+        raise RuntimeError(
+            f"The model '{target}' is not available on this API key. "
+            f"Set LLM_MODEL to one of: {', '.join(available_models()[:8])}"
+        ) from exc
+
+    if name in {"APITimeoutError", "APIConnectionError"} or "timeout" in text.lower():
+        raise RuntimeError(
+            f"The language model did not respond within {REQUEST_TIMEOUT:.0f}s."
+        ) from exc
+
+    raise RuntimeError(f"Language model call failed ({name}): {text[:300]}") from exc
 
 
 def _balanced_json(text: str) -> str | None:
