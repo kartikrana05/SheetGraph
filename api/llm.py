@@ -155,6 +155,7 @@ def complete(
 ) -> str:
     target = model or resolve_model()
     attempt = 0
+    downgraded = False
 
     while True:
         try:
@@ -178,6 +179,18 @@ def complete(
                 time.sleep(wait)
                 attempt += 1
                 continue
+
+            # Allowances are per model. When the capable one is exhausted the
+            # smaller one usually is not, and a slightly weaker answer beats no
+            # answer — particularly mid-demo.
+            fast = resolve_fast_model()
+            if _is_rate_limit(exc) and not downgraded and fast != target:
+                print(f"[llm] {target} still rate limited; falling back to {fast}")
+                target = fast
+                downgraded = True
+                attempt = 0
+                continue
+
             return _raise_readable(exc, target)
 
     choice = response.choices[0]
@@ -200,9 +213,10 @@ def _raise_readable(exc: Exception, target: str) -> str:
 
     if _is_rate_limit(exc):
         raise RuntimeError(
-            "The language model is rate limited and did not recover after "
-            f"{RATE_LIMIT_RETRIES} retries. Groq's free tier allows a fixed number "
-            "of tokens per minute — wait about a minute and try again."
+            "Both the main and fallback models are rate limited. Groq's free tier "
+            "allows a fixed number of tokens per minute and the window has not "
+            "reset yet — wait about a minute. If this keeps happening, set "
+            "LLM_MODEL=llama-3.1-8b-instant, which has a much larger allowance."
         ) from exc
 
     if "model" in text.lower() and ("not found" in text.lower() or "decommission" in text.lower()):

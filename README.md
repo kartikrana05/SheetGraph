@@ -1,26 +1,93 @@
 # SheetGraph
 
-**Turn any spreadsheet into a knowledge graph you can ask questions of.**
+**Turn your spreadsheets into one knowledge graph — and a live API.**
 
-Upload a reporting sheet. An LLM reads the *statistical shape* of your columns and
-proposes a property-graph schema — which columns become entities, which stay as
-properties, and how they relate. You refine that schema in plain English, seed it into
-Neo4j, then explore the graph visually and query it in natural language.
+Upload as many sheets as you like. An LLM reads the *statistical shape* of every
+column, works out which entities appear in more than one sheet, and proposes a single
+property-graph schema that joins them. You refine it in plain English, seed it into
+Neo4j, then explore it visually, ask questions that cross every sheet at once, and
+freeze any question into a REST endpoint your other systems can call.
 
 Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops),
 8–9 August 2026.
 
 ---
 
-## The idea
+## The problem
 
-Most spreadsheet-to-database tools make you define the schema yourself. Most
-text-to-SQL tools only work against a schema someone hardcoded in advance.
+Organisations run on spreadsheets, and the useful data is never in one of them.
 
-SheetGraph does neither. **The schema is inferred at upload time and stored alongside
-the data**, then injected into the query prompt at question time. That's what lets the
-same deployment answer questions about a project tracker, a sales pipeline and a
-support-ticket export without a line of code changing between them.
+A sales export lists orders by product code and region code. The product master sits
+in another tab, the region master in a third, the field team roster in a fourth. Every
+individual sheet is readable. The questions worth asking are not:
+
+> *Which Gold-tier distributors in the West zone buy the most from the Beverages
+> category, and which rep covers them?*
+
+That question touches four sheets. Answering it today means one of three things:
+
+1. **VLOOKUP and pivot tables** — a person spends an hour, produces a number nobody
+   can reproduce, and the workbook is stale the next morning.
+2. **Load it into a database** — someone has to design the schema, write the DDL, map
+   every column, and maintain it. Days of work, and it starts over when the columns
+   change.
+3. **Ask a BI team** — a ticket, a queue, and an answer next week.
+
+And relationship questions are precisely what spreadsheets are worst at. A pivot table
+can group and sum; it cannot traverse. "Which reps have never sold Personal Care" or
+"which distributors order from every category" are one hop in a graph and a manual
+cross-referencing exercise in Excel.
+
+**The existing tools each solve half of it.** Spreadsheet-to-database tools make *you*
+define the schema, which is the hard part. Text-to-SQL tools query beautifully — but
+only against a schema someone hardcoded in advance, so they work for one dataset and
+one dataset only.
+
+Then there is the last mile. Even when you get the answer, it dies in a chat window.
+There is no way to call a pivot table from a dashboard, a cron job, or another service.
+
+---
+
+## What SheetGraph does about it
+
+**The schema is inferred at upload time and stored alongside the data**, then injected
+into the query prompt at question time. Nothing is hardcoded, so the same deployment
+answers questions about a project tracker, an FMCG sales export and a support-ticket
+dump with no code change between them.
+
+Four things follow from that:
+
+| | |
+|---|---|
+| **You never design a schema** | Columns are profiled statistically — semantic type, cardinality, fill rate, sample values — and a model proposes the labels, keys, properties and relationships. Every proposal is validated and repaired against your real columns before it can run. |
+| **Separate sheets become one graph** | An entity found in more than one sheet becomes a *single node fed by several sources*, matched on meaning and overlapping values rather than identical column names — so `SKU Code` in a sales export and `Product Code` in a master are the same product. |
+| **Relationship questions become one hop** | The thing spreadsheets cannot do is exactly what a graph is for. Every answer shows the Cypher it ran, so the working is checkable rather than trusted. |
+| **Answers become endpoints** | Any question can be frozen into a named, parameterised, read-only URL with a ready `curl`. That is the step that turns an analysis into something a dashboard or a cron job can consume. |
+
+### Concretely
+
+Load the `sales_orders` sample — three tabs, 130 rows, no configuration:
+
+```
+Orders          Order ID · Order Date · Customer · Product Code · Region Code · Amount
+Product Master  Product Code · Product Name · Category
+Region Master   Region Code · Region Name · Zone
+```
+
+SheetGraph works out on its own that `Product Code` and `Region Code` each appear in
+two tabs and joins them, promotes `Customer`, `Category`, `Zone` and `Status` to nodes,
+keeps the amounts and dates as properties, and reports how many keys actually matched
+across each join — so a mis-matched key is visible rather than silent.
+
+Then this works, across all three tabs at once:
+
+```bash
+curl 'https://your-api.zerops.app/api/data/top-products-by-zone?zone=Zone%201&limit=5'
+```
+
+---
+
+## How it works
 
 ```
    sheet.xlsx
