@@ -125,10 +125,14 @@ function EndpointRow({ endpoint }) {
   )
 }
 
-function DatasetCard({ dataset, onOpen }) {
+function DatasetCard({ dataset, onOpen, onDelete }) {
   const [expanded, setExpanded] = useState(false)
   const [endpoints, setEndpoints] = useState(null)
   const [loading, setLoading] = useState(false)
+  // Two-step rather than a browser confirm(): deleting a dataset drops its
+  // nodes, relationships and saved endpoints, and there is no undo.
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   async function toggle() {
     const next = !expanded
@@ -164,8 +168,47 @@ function DatasetCard({ dataset, onOpen }) {
             {expanded ? ' ▴' : ' ▾'}
           </button>
         )}
-        <button onClick={() => onOpen(dataset.id)}>Open</button>
+
+        {confirming ? (
+          <>
+            <button
+              className="danger"
+              disabled={deleting}
+              onClick={async () => {
+                setDeleting(true)
+                try {
+                  await onDelete(dataset.id)
+                } finally {
+                  setDeleting(false)
+                  setConfirming(false)
+                }
+              }}
+            >
+              {deleting ? <span className="spinner" /> : 'Delete for good'}
+            </button>
+            <button className="ghost" disabled={deleting} onClick={() => setConfirming(false)}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            <button className="ghost" title="Delete this dataset" onClick={() => setConfirming(true)}>
+              Delete
+            </button>
+            <button onClick={() => onOpen(dataset.id)}>Open</button>
+          </>
+        )}
       </div>
+
+      {confirming && (
+        <div className="confirm-note">
+          Deletes {(dataset.nodeCount ?? 0).toLocaleString()} nodes,{' '}
+          {(dataset.relCount ?? 0).toLocaleString()} relationships
+          {dataset.endpointCount > 0 &&
+            ` and ${dataset.endpointCount} saved endpoint${dataset.endpointCount > 1 ? 's' : ''}`}
+          . This cannot be undone.
+        </div>
+      )}
 
       {expanded && (
         <div style={{ marginTop: 10 }}>
@@ -192,9 +235,19 @@ export default function DatasetLibrary({ onOpen }) {
       .catch((err) => setError(err.message))
   }, [])
 
+  async function remove(id) {
+    setError(null)
+    try {
+      await api.deleteDataset(id)
+      setDatasets((prev) => prev.filter((d) => d.id !== id))
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   // Nothing seeded yet is the normal first-run state, not a problem worth
   // showing — the dropzone above already tells the user what to do.
-  if (error || !datasets?.length) return null
+  if (!datasets?.length) return null
 
   const totalEndpoints = datasets.reduce((n, d) => n + (d.endpointCount || 0), 0)
 
@@ -209,8 +262,15 @@ export default function DatasetLibrary({ onOpen }) {
         )}
         . Open one to keep exploring, or try an endpoint without leaving this page.
       </p>
+      {error && <div className="error-banner">{error}</div>}
+
       {datasets.map((dataset) => (
-        <DatasetCard key={dataset.id} dataset={dataset} onOpen={onOpen} />
+        <DatasetCard
+          key={dataset.id}
+          dataset={dataset}
+          onOpen={onOpen}
+          onDelete={remove}
+        />
       ))}
     </div>
   )
