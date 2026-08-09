@@ -360,6 +360,142 @@ def join_report(schema: dict) -> list[dict]:
     ]
 
 
+def _norm(name: str) -> str:
+    """Squash a column name for cross-sheet comparison."""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower())
+
+
+def heuristic_schema(profiles: list[dict]) -> dict:
+    """
+    Derive a schema from the column statistics alone, with no model call.
+
+    This is the fallback when inference fails — a rate limit, an outage, a
+    truncated response. It applies the same rules the prompt describes, just
+    mechanically: the most unique identifier is the primary key, low-cardinality
+    categories become their own nodes, measures and dates stay as properties,
+    and a column whose name matches another sheet's key is treated as a join.
+
+    Cruder than the model — it cannot tell that "Sales Rep ID" and "Employee ID"
+    are the same thing — but it always returns something usable.
+    """
+    nodes: dict[str, dict] = {}
+    relationships: list[dict] = []
+
+    # Pass one: each sheet's primary entity, keyed on its most unique column.
+    primary_of: dict[str, str] = {}
+    for profile in profiles:
+        sheet = profile["sheetName"]
+        columns = profile["columns"]
+        if not columns:
+            continue
+
+        key_col = max(
+            columns,
+            key=lambda c: (c["semanticType"] == "identifier", c["uniqueRatio"]),
+        )
+        label = _pascal(re.sub(r"\s*(id|code|no|number)\s*$", "", key_col["name"], flags=re.I)) or "Record"
+        while label in nodes and nodes[label]["sources"][0]["sheet"] != sheet:
+            label = f"{label}Item"
+
+        properties = [
+            {"name": _camel(c["name"]), "column": c["name"]}
+            for c in columns
+            if c is not key_col
+            and c["semanticType"] in {"measure", "date", "text", "boolean", "identifier"}
+        ]
+
+        nodes.setdefault(label, {
+            "label": label,
+            "key": _camel(key_col["name"]),
+            "sources": [],
+            "reason": f"Primary entity of {sheet}",
+        })
+        nodes[label]["sources"].append({
+            "sheet": sheet, "keyColumn": key_col["name"], "properties": properties,
+        })
+        primary_of[sheet] = label
+
+    # Foreign keys are joins, not categories. Without this, "Product Code" in
+    # Orders becomes a separate ProductCode node alongside the Product node it
+    # actually refers to.
+    claimed_keys = {
+        _norm(src["keyColumn"])
+        for node in nodes.values()
+        for src in node["sources"]
+    }
+
+    # Pass two: promote low-cardinality categories to their own nodes.
+    for profile in profiles:
+        sheet = profile["sheetName"]
+        parent = primary_of.get(sheet)
+        if not parent:
+            continue
+        rows = max(1, profile["rowCount"])
+
+        for col in profile["columns"]:
+            if col["semanticType"] != "category":
+                continue
+            if _norm(col["name"]) in claimed_keys:
+                continue
+            if col["distinctCount"] > 30 or col["distinctCount"] / rows > 0.5:
+                continue
+            # Sentences are not entities, however few distinct values there are.
+            if any(len(str(v)) > 40 for v in col["sampleValues"][:3]):
+                continue
+
+            label = _pascal(col["name"])
+            if label == parent or label in nodes:
+                continue
+            nodes[label] = {
+                "label": label, "key": "name", "sources": [
+                    {"sheet": sheet, "keyColumn": col["name"], "properties": []}
+                ],
+                "reason": f"{col['distinctCount']} distinct values across {rows} rows",
+            }
+            relationships.append({
+                "type": _upper_snake(f"HAS_{col['name']}"),
+                "from": parent, "to": label, "sheet": sheet, "reason": "",
+            })
+
+    # Pass three: a column matching another sheet's key column is a join.
+    key_columns = {
+        _norm(src["keyColumn"]): (label, src["keyColumn"])
+        for label, node in nodes.items()
+        for src in node["sources"]
+    }
+    for profile in profiles:
+        sheet = profile["sheetName"]
+        parent = primary_of.get(sheet)
+        for col in profile["columns"]:
+            match = key_columns.get(_norm(col["name"]))
+            if not match:
+                continue
+            label, _ = match
+            if label == parent:
+                continue
+            already = any(s["sheet"] == sheet for s in nodes[label]["sources"])
+            if not already:
+                nodes[label]["sources"].append(
+                    {"sheet": sheet, "keyColumn": col["name"], "properties": []}
+                )
+            if parent and not any(
+                r["from"] == parent and r["to"] == label for r in relationships
+            ):
+                relationships.append({
+                    "type": _upper_snake(f"REFERS_TO_{label}"),
+                    "from": parent, "to": label, "sheet": sheet, "reason": "",
+                })
+
+    return {
+        "datasetName": profiles[0]["filename"].rsplit(".", 1)[0] if profiles else "Dataset",
+        "summary": "Derived from column statistics without a language model, because "
+                   "inference was unavailable. Review it before seeding — the joins in "
+                   "particular are matched on column name only.",
+        "nodes": list(nodes.values()),
+        "relationships": relationships,
+    }
+
+
 def propose_schema(profiles: list[dict], hint: str | None = None) -> tuple[dict, list[str]]:
     """Ask the model for a schema across all sheets, then validate it."""
     user = profiles_for_prompt(profiles)
@@ -372,8 +508,17 @@ def propose_schema(profiles: list[dict], hint: str | None = None) -> tuple[dict,
     if hint:
         user += f"\n\nThe user wants to analyse this — weight it heavily:\n{hint}"
 
-    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=4000)
-    return validate_schema(raw, profiles)
+    try:
+        raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=4000)
+        return validate_schema(raw, profiles)
+    except Exception as exc:
+        # Never leave the user stuck at step two. A mechanical schema they can
+        # refine beats an error they cannot act on.
+        schema, warnings = validate_schema(heuristic_schema(profiles), profiles)
+        warnings.insert(0, f"AI schema inference failed ({type(exc).__name__}: {exc}). "
+                           f"Fell back to a rule-based schema — review it, and use the "
+                           f"box below to change anything.")
+        return schema, warnings
 
 
 def refine_schema(profiles: list[dict], schema: dict, instruction: str) -> tuple[dict, list[str]]:

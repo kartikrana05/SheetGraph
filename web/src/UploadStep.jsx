@@ -7,11 +7,17 @@ import { api } from './api'
 // the same upload path as a real drop.
 const SAMPLES = [
   {
+    file: 'sales_orders.xlsx',
+    name: 'Sales orders',
+    detail: '3 tabs · 130 rows',
+    blurb: 'Orders with a product master and a region master. Product Code and Region Code appear in two tabs each and become single joined nodes.',
+    featured: true,
+  },
+  {
     file: 'fmcg_operations.xlsx',
     name: 'FMCG field operations',
     detail: '4 tabs · 165 rows',
-    blurb: 'Sales plus distributor, product and team masters. Three entities appear in more than one tab — including two whose column names differ — and get joined into single nodes.',
-    featured: true,
+    blurb: 'Sales plus distributor, product and team masters — including two columns whose names differ but hold the same values.',
   },
   {
     file: 'pm_tracker.xlsx',
