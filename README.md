@@ -13,6 +13,35 @@ Built for [The Zerops Challenge](https://www.wemakedevs.org/hackathons/zerops),
 
 ---
 
+## Live demo
+
+### ▶ **[web-2b30.prg1.zerops.app](https://web-2b30.prg1.zerops.app/)**
+
+No sign-up, no spreadsheet needed — click **Sales orders** on the landing page and the
+whole flow runs on bundled sample data.
+
+| | |
+|---|---|
+| **App** | <https://web-2b30.prg1.zerops.app/> |
+| **API** | <https://api-2b30-8000.prg1.zerops.app/api/health> |
+| **API docs** | <https://api-2b30-8000.prg1.zerops.app/docs> |
+
+Running on Zerops: a `static` service for the frontend, `python@3.12` for the API, and
+Neo4j behind it. See [DEPLOY.md](DEPLOY.md) for how it is provisioned.
+
+**Sixty-second tour**
+
+1. Open the app and click **Sales orders** — three tabs load and every column is
+   profiled
+2. **Design one graph across all tables** — the proposed schema shows which entities
+   were joined across tabs, and under which columns
+3. **Seed** — the graph renders, and the header reports how many keys actually matched
+   on each join
+4. **Ask** — "top products by amount" answers in plain English and shows the Cypher it ran
+5. **Build an API** — describe an endpoint, get a parameterised URL and a ready `curl`
+
+---
+
 ## The problem
 
 Organisations run on spreadsheets, and the useful data is never in one of them.
