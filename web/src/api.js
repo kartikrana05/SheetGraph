@@ -67,8 +67,36 @@ export function needsApiBase() {
   return !apiBase() && !ON_LOCALHOST
 }
 
+// Schema inference calls an LLM over every sheet's profile, so it is by far
+// the slowest request here. Without an explicit timeout the browser reports a
+// dropped connection as a bare "Failed to fetch", which says nothing about
+// whether the server was slow, unreachable, or blocked by CORS.
+const TIMEOUT_MS = 120000
+
 async function request(path, options = {}) {
-  const response = await fetch(`${apiBase()}${path}`, options)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+
+  let response
+  try {
+    response = await fetch(`${apiBase()}${path}`, { ...options, signal: controller.signal })
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(
+        `The API did not respond within ${TIMEOUT_MS / 1000}s. Schema inference over ` +
+        `several sheets can be slow — try again, or upload fewer sheets at once.`
+      )
+    }
+    // fetch() rejects identically for DNS failure, refused connection, CORS
+    // rejection and a dropped request, so name the possibilities rather than
+    // pretending to know which one it was.
+    throw new Error(
+      `Could not reach the API at ${apiBase() || 'this origin'}. It may be ` +
+      `restarting, or the request was blocked. (${err.message})`
+    )
+  } finally {
+    clearTimeout(timer)
+  }
 
   if (!response.ok) {
     let detail = `Request failed (${response.status})`

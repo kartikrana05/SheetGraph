@@ -18,6 +18,11 @@ from llm import complete_json
 
 RESERVED_LABELS = {"_Dataset", "_Column"}
 MAX_SHEETS = 8
+# Prompt size grows with sheets x columns, and it is the multi-sheet uploads
+# that push the request long enough to be dropped. A sheet with more columns
+# than this contributes its first N; the profile is ordered as the sheet is,
+# so the primary key and main attributes come first.
+MAX_COLUMNS_PER_SHEET = 22
 
 SYSTEM_PROMPT = """\
 You are a data modelling expert who converts spreadsheets into a single property-graph
@@ -125,13 +130,24 @@ def _sheet_block(profile: dict) -> str:
         f'TABLE "{profile["sheetName"]}"  ({profile["rowCount"]} rows, '
         f'{profile["columnCount"]} columns)',
     ]
-    for col in profile["columns"]:
-        samples = ", ".join(json.dumps(v, default=str) for v in col["sampleValues"][:5])
+    columns = profile["columns"][:MAX_COLUMNS_PER_SHEET]
+    dropped = len(profile["columns"]) - len(columns)
+
+    for col in columns:
+        # Three samples is enough to judge a column's meaning, and this block is
+        # repeated for every column of every sheet — the single biggest lever on
+        # how long inference takes.
+        samples = ", ".join(json.dumps(v, default=str) for v in col["sampleValues"][:3])
         lines.append(
             f'  - "{col["name"]}" | type={col["semanticType"]} '
             f'| distinct={col["distinctCount"]} | uniqueRatio={col["uniqueRatio"]} '
             f'| fillRate={col["fillRate"]} | samples: {samples}'
         )
+
+    if dropped:
+        # Say so rather than silently modelling a subset of the sheet.
+        lines.append(f'  ({dropped} further columns omitted to keep this prompt small)')
+
     return "\n".join(lines)
 
 
@@ -353,7 +369,7 @@ def propose_schema(profiles: list[dict], hint: str | None = None) -> tuple[dict,
     if hint:
         user += f"\n\nThe user wants to analyse this — weight it heavily:\n{hint}"
 
-    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=3000)
+    raw = complete_json(SYSTEM_PROMPT, user, temperature=0.2, max_tokens=2200)
     return validate_schema(raw, profiles)
 
 

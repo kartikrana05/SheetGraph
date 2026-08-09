@@ -18,13 +18,24 @@ MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
 _client: Groq | None = None
 
 
+# The default client retries rate limits with backoff and waits indefinitely,
+# so a throttled request can hang for minutes. Behind a load balancer that
+# surfaces to the browser as a dropped connection with no explanation, which
+# is worse than a clear failure.
+REQUEST_TIMEOUT = float(os.getenv("LLM_TIMEOUT_SECONDS", "45"))
+# Zero, not one: a retry doubles the worst case to ~90s, and the thing most
+# likely to be retried is a rate limit, whose backoff is exactly what stalls
+# the request. Better to fail at 45s with an explanation the user can act on.
+MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "0"))
+
+
 def client() -> Groq:
     global _client
     if _client is None:
         key = os.getenv("GROQ_API_KEY")
         if not key:
             raise RuntimeError("GROQ_API_KEY is not set")
-        _client = Groq(api_key=key)
+        _client = Groq(api_key=key, timeout=REQUEST_TIMEOUT, max_retries=MAX_RETRIES)
     return _client
 
 
@@ -34,15 +45,34 @@ def complete(
     temperature: float = 0.1,
     max_tokens: int = 2048,
 ) -> str:
-    response = client().chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-    )
+    try:
+        response = client().chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:
+        # Translate the provider's failures into something a user can act on.
+        # Left raw, a rate limit and an outage read the same.
+        name = type(exc).__name__
+        text = str(exc)
+        if "rate" in text.lower() or "429" in text or name == "RateLimitError":
+            raise RuntimeError(
+                "The language model is rate limited right now. Wait a few seconds "
+                "and try again, or upload fewer sheets at once — a larger prompt "
+                "consumes more of the per-minute allowance."
+            ) from exc
+        if name in {"APITimeoutError", "APIConnectionError"} or "timeout" in text.lower():
+            raise RuntimeError(
+                f"The language model did not respond within {REQUEST_TIMEOUT:.0f}s. "
+                "This usually means the prompt was large — try fewer sheets."
+            ) from exc
+        raise RuntimeError(f"Language model call failed ({name}): {text[:300]}") from exc
+
     return (response.choices[0].message.content or "").strip()
 
 
